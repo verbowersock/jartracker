@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Alert,
   FlatList,
@@ -22,6 +23,7 @@ import {
   CATEGORIES,
   JAR_SIZES,
 } from "../db";
+import { theme } from "../theme";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -147,7 +149,7 @@ export default function AddBatchScreen() {
     }
 
     // Create multiple jars with jar size and location
-    const jarIds = await createMultipleJars(
+    const { jarIds, batchId } = await createMultipleJars(
       itemTypeId,
       fillDate + "T12:00:00.000Z",
       qty,
@@ -155,25 +157,26 @@ export default function AddBatchScreen() {
       location.trim() || undefined
     );
 
-    // Show success message
+    // Show success message and offer label generation
     Alert.alert(
       "Batch Added Successfully",
       `Added ${qty} jar${qty > 1 ? "s" : ""} of ${
         selectedItemType?.name || newItemTypeName
-      }`,
+      }\n\nWould you like to generate labels now?`,
       [
+        {
+          text: "Not Now",
+          style: "cancel",
+          onPress: () => navigation.goBack(),
+        },
         {
           text: "Generate Labels",
           onPress: () => {
-            navigation.navigate("QRLabel", {
+            navigation.replace("QRLabel", {
               jarId: jarIds[0],
               batchIds: jarIds,
             });
           },
-        },
-        {
-          text: "Done",
-          onPress: () => navigation.goBack(),
         },
       ]
     );
@@ -181,16 +184,45 @@ export default function AddBatchScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Add New Batch</Text>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Add New Batch</Text>
+      </View>
 
       {/* Item Type Selection */}
       <Text style={styles.label}>Item Type</Text>
       <View style={styles.itemTypeSection}>
-        {selectedItemType ? (
+        {selectedItemType || newItemTypeName ? (
           <View style={styles.selectedItemType}>
-            <Text style={styles.selectedItemTypeName}>
-              {selectedItemType.name}
-            </Text>
+            <View style={styles.selectedItemTypeInfo}>
+              <Text style={styles.selectedItemTypeName}>
+                {selectedItemType?.name || newItemTypeName}
+              </Text>
+              {selectedItemType && selectedItemType.category && (
+                <View style={styles.selectedItemTypeCategory}>
+                  <Text style={styles.categoryIcon}>
+                    {
+                      CATEGORIES.find((c) => c.id === selectedItemType.category)
+                        ?.icon
+                    }
+                  </Text>
+                  <Text style={styles.selectedItemTypeCategoryText}>
+                    {
+                      CATEGORIES.find((c) => c.id === selectedItemType.category)
+                        ?.name
+                    }
+                  </Text>
+                </View>
+              )}
+              {!selectedItemType && newItemTypeName && (
+                <Text style={styles.newItemTypeIndicator}>New item type</Text>
+              )}
+            </View>
             <TouchableOpacity
               style={styles.changeButton}
               onPress={() => setShowItemTypeModal(true)}
@@ -204,19 +236,8 @@ export default function AddBatchScreen() {
               style={styles.selectButton}
               onPress={() => setShowItemTypeModal(true)}
             >
-              <Text style={styles.selectButtonText}>
-                Select Existing Item Type
-              </Text>
+              <Text style={styles.selectButtonText}>Select Item Type</Text>
             </TouchableOpacity>
-
-            <Text style={styles.orText}>or</Text>
-
-            <TextInput
-              style={styles.input}
-              value={newItemTypeName}
-              onChangeText={setNewItemTypeName}
-              placeholder="Enter new item type name (e.g., Strawberry Jam)"
-            />
           </>
         )}
       </View>
@@ -318,9 +339,14 @@ export default function AddBatchScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+            <Pressable
+              onPress={() => setShowCategoryModal(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel category selection"
+            >
               <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.modalTitle}>Select Category</Text>
             <View style={{ width: 60 }} />
           </View>
@@ -352,9 +378,14 @@ export default function AddBatchScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowJarSizeModal(false)}>
+            <Pressable
+              onPress={() => setShowJarSizeModal(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel jar size selection"
+            >
               <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.modalTitle}>Select Jar Size</Text>
             <View style={{ width: 60 }} />
           </View>
@@ -385,46 +416,74 @@ export default function AddBatchScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowItemTypeModal(false)}>
+            <Pressable
+              onPress={() => setShowItemTypeModal(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel item type selection"
+            >
               <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
             <Text style={styles.modalTitle}>Select Item Type</Text>
-            <TouchableOpacity onPress={onCreateNewItemType}>
-              <Text style={styles.modalCreate}>New</Text>
-            </TouchableOpacity>
+            <View style={{ width: 60 }} />
           </View>
 
           <TextInput
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search item types..."
+            placeholder="Search item types or add new..."
           />
 
-          <FlatList
-            data={filteredItemTypes}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.itemTypeRow}
-                onPress={() => onSelectExistingItemType(item)}
-              >
-                <Text style={styles.itemTypeName}>{item.name}</Text>
-                {item.recipe && (
-                  <Text style={styles.itemTypeRecipe} numberOfLines={1}>
-                    {item.recipe}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
+          {!searchQuery.trim() && existingItemTypes.length === 0 ? (
+            <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
-                {searchQuery
-                  ? "No matching item types found"
-                  : "No item types created yet"}
+                No item types yet. Start typing to create your first one!
               </Text>
-            }
-          />
+            </View>
+          ) : !searchQuery.trim() && existingItemTypes.length > 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                Start typing to search or create a new item type
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredItemTypes}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.itemTypeRow}
+                  onPress={() => onSelectExistingItemType(item)}
+                >
+                  <Text style={styles.itemTypeName}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <TouchableOpacity
+                  style={[styles.itemTypeRow, styles.createNewRow]}
+                  onPress={() => {
+                    setNewItemTypeName(searchQuery.trim());
+                    onCreateNewItemType();
+                  }}
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={24}
+                    color={theme.colors.primary}
+                  />
+                  <View style={styles.createNewContent}>
+                    <Text style={styles.createNewText}>
+                      Create new item type
+                    </Text>
+                    <Text style={styles.createNewName}>
+                      "{searchQuery.trim()}"
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              }
+            />
+          )}
         </View>
       </Modal>
     </ScrollView>
@@ -432,15 +491,40 @@ export default function AddBatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 24 },
-  label: { marginTop: 16, marginBottom: 8, fontWeight: "600", fontSize: 16 },
+  container: {
+    flex: 1,
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.background,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: theme.spacing.lg,
+  },
+  backButton: {
+    marginRight: theme.spacing.md,
+    padding: theme.spacing.sm,
+  },
+  title: {
+    fontSize: theme.fontSize.xxl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  label: {
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    fontWeight: theme.fontWeight.semibold,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+  },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    fontSize: theme.fontSize.md,
+    backgroundColor: theme.colors.surface,
   },
   selectInput: {
     justifyContent: "center",
@@ -451,134 +535,196 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   selectText: {
-    fontSize: 16,
-    color: "#333",
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
   },
   placeholderText: {
-    fontSize: 16,
-    color: "#999",
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textLight,
   },
   categoryIcon: {
-    fontSize: 20,
-    marginRight: 12,
+    fontSize: theme.fontSize.xl,
+    marginRight: theme.spacing.md,
   },
   multiline: {
     minHeight: 80,
     textAlignVertical: "top",
   },
   itemTypeSection: {
-    marginBottom: 8,
+    marginBottom: theme.spacing.sm,
   },
   selectedItemType: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    padding: 12,
-    backgroundColor: "#e8f5e8",
-    borderRadius: 8,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.primaryLight + "30",
+    borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: "#4caf50",
+    borderColor: theme.colors.primary,
+  },
+  selectedItemTypeInfo: {
+    flex: 1,
+    marginRight: theme.spacing.md,
   },
   selectedItemTypeName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2e7d32",
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.primary,
+    marginBottom: theme.spacing.xs,
+  },
+  selectedItemTypeCategory: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: theme.spacing.xs,
+  },
+  selectedItemTypeCategoryText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  selectedItemTypeRecipe: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+    lineHeight: 18,
+  },
+  newItemTypeIndicator: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+    fontStyle: "italic",
+    marginBottom: theme.spacing.xs,
   },
   changeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "#2e7d32",
-    borderRadius: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.sm,
+    alignSelf: "flex-start",
   },
   changeButtonText: {
-    color: "white",
-    fontWeight: "600",
+    color: theme.colors.surface,
+    fontWeight: theme.fontWeight.semibold,
   },
   selectButton: {
-    padding: 12,
-    backgroundColor: "#1565c0",
-    borderRadius: 8,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.primaryDark,
   },
   selectButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 16,
+    color: theme.colors.surface,
+    fontWeight: theme.fontWeight.semibold,
+    fontSize: theme.fontSize.md,
   },
   orText: {
     textAlign: "center",
-    margin: 16,
-    fontSize: 16,
-    color: "#666",
+    margin: theme.spacing.lg,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
   },
   saveButton: {
-    marginTop: 24,
-    marginBottom: 40,
-    padding: 16,
-    backgroundColor: "#2e7d32",
-    borderRadius: 8,
+    marginTop: theme.spacing.xxl,
+    marginBottom: theme.spacing.xxxl + theme.spacing.sm,
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.primaryDark,
   },
   saveButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 18,
+    color: theme.colors.surface,
+    fontWeight: theme.fontWeight.semibold,
+    fontSize: theme.fontSize.lg,
   },
 
   // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: theme.colors.surface,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
+    padding: theme.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: theme.colors.border,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
   },
   modalCancel: {
-    color: "#666",
-    fontSize: 16,
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.md,
   },
   modalCreate: {
-    color: "#2e7d32",
-    fontSize: 16,
-    fontWeight: "600",
+    color: theme.colors.primary,
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
   },
   searchInput: {
-    margin: 16,
-    padding: 12,
+    margin: theme.spacing.lg,
+    padding: theme.spacing.md,
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    fontSize: 16,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    fontSize: theme.fontSize.md,
+    backgroundColor: theme.colors.surface,
   },
   itemTypeRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
+    padding: theme.spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ddd",
+    borderBottomColor: theme.colors.border,
   },
   itemTypeName: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
   },
   itemTypeRecipe: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 4,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+  },
+  emptyContainer: {
+    padding: theme.spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 100,
+    borderColor: theme.colors.error,
   },
   emptyText: {
     textAlign: "center",
-    color: "#999",
-    marginTop: 32,
-    fontSize: 16,
+    color: theme.colors.textLight,
+    fontSize: theme.fontSize.md,
+  },
+  createNewRow: {
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderStyle: "dashed",
+  },
+  createNewContent: {
+    marginLeft: theme.spacing.md,
+    flex: 1,
+  },
+  createNewText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.primary,
+  },
+  createNewName: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
   },
 });

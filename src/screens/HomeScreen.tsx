@@ -7,11 +7,11 @@ import {
   StyleSheet,
   ScrollView,
   SafeAreaView,
-  Modal,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { getAllBatches, getJarStats, CATEGORIES } from "../db";
+import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -32,6 +32,7 @@ type Batch = {
   usedJars: number;
   availableJars: number;
   jarIds: number[];
+  batchId: string;
 };
 
 export default function HomeScreen() {
@@ -41,8 +42,6 @@ export default function HomeScreen() {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] =
     React.useState<CategoryFilter>("all");
-  const [selectedBatch, setSelectedBatch] = React.useState<Batch | null>(null);
-  const [showBatchModal, setShowBatchModal] = React.useState(false);
 
   const loadData = async () => {
     try {
@@ -89,8 +88,13 @@ export default function HomeScreen() {
     <TouchableOpacity
       style={styles.batchCard}
       onPress={() => {
-        setSelectedBatch(item);
-        setShowBatchModal(true);
+        // Navigate to the dedicated BatchDetailScreen
+        navigation.navigate("BatchDetail", {
+          batchName: item.name,
+          itemTypeId: item.id, // Using batch id as itemTypeId for now
+          fillDate: item.fillDate,
+          batchId: item.batchId,
+        });
       }}
     >
       <View style={styles.cardHeader}>
@@ -109,7 +113,7 @@ export default function HomeScreen() {
 
       <View style={styles.cardDetails}>
         <View style={styles.detailRow}>
-          <Ionicons name="resize-outline" size={16} color="#666" />
+          <FontAwesome6 name="jar" size={16} color="#666" />
           <Text style={styles.detailText}>Size: {item.jarSize}</Text>
         </View>
 
@@ -145,16 +149,10 @@ export default function HomeScreen() {
   );
 
   const getCategoryColor = (categoryId: string): string => {
-    const colors: { [key: string]: string } = {
-      fruits: "#FFE0B2",
-      vegetables: "#C8E6C9",
-      preserves: "#FFF3E0",
-      pickles: "#E8F5E8",
-      sauces: "#FFCDD2",
-      meats: "#F3E5F5",
-      other: "#E0E0E0",
-    };
-    return colors[categoryId] ?? colors.other;
+    return (
+      theme.categoryColors[categoryId as keyof typeof theme.categoryColors] ??
+      theme.categoryColors.other
+    );
   };
 
   return (
@@ -171,50 +169,84 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats Cards */}
+        {/* Stats Cards (now clickable filters) */}
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Total Jars</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: "#2e7d32" }]}>
+          <TouchableOpacity
+            style={[
+              styles.statCard,
+              statusFilter === "all" && styles.statCardActive,
+            ]}
+            onPress={() => setStatusFilter("all")}
+          >
+            <Text
+              style={[
+                styles.statNumber,
+                statusFilter === "all" && styles.statNumberActive,
+              ]}
+            >
+              {stats.total}
+            </Text>
+            <Text
+              style={[
+                styles.statLabel,
+                statusFilter === "all" && styles.statLabelActive,
+              ]}
+            >
+              Total Jars
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.statCard,
+              statusFilter === "available" && styles.statCardActive,
+            ]}
+            onPress={() => setStatusFilter("available")}
+          >
+            <Text
+              style={[
+                styles.statNumber,
+                { color: "#2e7d32" },
+                statusFilter === "available" && styles.statNumberActive,
+              ]}
+            >
               {stats.available}
             </Text>
-            <Text style={styles.statLabel}>Available</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: "#d32f2f" }]}>
+            <Text
+              style={[
+                styles.statLabel,
+                statusFilter === "available" && styles.statLabelActive,
+              ]}
+            >
+              Available
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.statCard,
+              statusFilter === "used" && styles.statCardActive,
+            ]}
+            onPress={() => setStatusFilter("used")}
+          >
+            <Text
+              style={[
+                styles.statNumber,
+                { color: "#d32f2f" },
+                statusFilter === "used" && styles.statNumberActive,
+              ]}
+            >
               {stats.used}
             </Text>
-            <Text style={styles.statLabel}>Used</Text>
-          </View>
-        </View>
-
-        {/* Status Filter */}
-        <View style={styles.filterSection}>
-          <Text style={styles.filterTitle}>Filter by Status</Text>
-          <View style={styles.filterButtons}>
-            {["all", "available", "used"].map((status) => (
-              <TouchableOpacity
-                key={status}
-                style={[
-                  styles.filterButton,
-                  statusFilter === status && styles.filterButtonActive,
-                ]}
-                onPress={() => setStatusFilter(status as StatusFilter)}
-              >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    statusFilter === status && styles.filterButtonTextActive,
-                  ]}
-                >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+            <Text
+              style={[
+                styles.statLabel,
+                statusFilter === "used" && styles.statLabelActive,
+              ]}
+            >
+              Used
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Category Filter */}
@@ -289,174 +321,6 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-
-      {/* Batch Detail Modal */}
-      <Modal
-        visible={showBatchModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowBatchModal(false)}>
-              <Text style={styles.modalClose}>Close</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Batch Details</Text>
-            <TouchableOpacity
-              onPress={() => {
-                if (selectedBatch) {
-                  setShowBatchModal(false);
-                  navigation.navigate("QRLabel", {
-                    jarId: selectedBatch.jarIds[0],
-                    batchIds: selectedBatch.jarIds,
-                  });
-                }
-              }}
-            >
-              <Text style={styles.modalAction}>Labels</Text>
-            </TouchableOpacity>
-          </View>
-
-          {selectedBatch && (
-            <ScrollView style={styles.modalContent}>
-              {/* Batch Name and Category */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalBatchName}>{selectedBatch.name}</Text>
-                <View
-                  style={[
-                    styles.modalCategoryChip,
-                    {
-                      backgroundColor: getCategoryColor(selectedBatch.category),
-                    },
-                  ]}
-                >
-                  <Text style={styles.modalCategoryText}>
-                    {getCategoryIcon(selectedBatch.category)}{" "}
-                    {getCategoryName(selectedBatch.category)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Key Details */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Details</Text>
-
-                <View style={styles.modalDetailRow}>
-                  <Ionicons name="resize-outline" size={20} color="#666" />
-                  <Text style={styles.modalDetailLabel}>Jar Size:</Text>
-                  <Text style={styles.modalDetailValue}>
-                    {selectedBatch.jarSize || "Not specified"}
-                  </Text>
-                </View>
-
-                <View style={styles.modalDetailRow}>
-                  <Ionicons name="calendar-outline" size={20} color="#666" />
-                  <Text style={styles.modalDetailLabel}>Date Canned:</Text>
-                  <Text style={styles.modalDetailValue}>
-                    {new Date(selectedBatch.fillDate).toLocaleDateString()}
-                  </Text>
-                </View>
-
-                {selectedBatch.location && (
-                  <View style={styles.modalDetailRow}>
-                    <Ionicons name="location-outline" size={20} color="#666" />
-                    <Text style={styles.modalDetailLabel}>Location:</Text>
-                    <Text style={styles.modalDetailValue}>
-                      {selectedBatch.location}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Jar Statistics */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Jar Inventory</Text>
-
-                <View style={styles.modalStatsGrid}>
-                  <View style={styles.modalStatCard}>
-                    <Text style={styles.modalStatNumber}>
-                      {selectedBatch.totalJars}
-                    </Text>
-                    <Text style={styles.modalStatLabel}>Total</Text>
-                  </View>
-                  <View style={styles.modalStatCard}>
-                    <Text
-                      style={[styles.modalStatNumber, { color: "#2e7d32" }]}
-                    >
-                      {selectedBatch.availableJars}
-                    </Text>
-                    <Text style={styles.modalStatLabel}>Available</Text>
-                  </View>
-                  <View style={styles.modalStatCard}>
-                    <Text
-                      style={[styles.modalStatNumber, { color: "#d32f2f" }]}
-                    >
-                      {selectedBatch.usedJars}
-                    </Text>
-                    <Text style={styles.modalStatLabel}>Used</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Notes */}
-              {selectedBatch.notes && (
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Notes</Text>
-                  <View style={styles.modalNotesBox}>
-                    <Text style={styles.modalNotesText}>
-                      {selectedBatch.notes}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Actions */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Actions</Text>
-
-                <TouchableOpacity
-                  style={styles.modalActionButton}
-                  onPress={() => {
-                    setShowBatchModal(false);
-                    navigation.navigate("QRLabel", {
-                      jarId: selectedBatch.jarIds[0],
-                      batchIds: selectedBatch.jarIds,
-                    });
-                  }}
-                >
-                  <Ionicons name="qr-code-outline" size={20} color="white" />
-                  <Text style={styles.modalActionButtonText}>
-                    Generate QR Labels
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.modalActionButton,
-                    styles.modalSecondaryButton,
-                  ]}
-                  onPress={() => {
-                    // Navigate to batch detail screen to manage individual jars
-                    setShowBatchModal(false);
-                    navigation.navigate("BatchDetail", {
-                      batchName: selectedBatch.name,
-                      itemTypeId: selectedBatch.id,
-                      fillDate: selectedBatch.fillDate.split("T")[0], // Extract just the date part
-                    });
-                  }}
-                >
-                  <Ionicons name="list-outline" size={20} color="#007AFF" />
-                  <Text
-                    style={[styles.modalActionButtonText, { color: "#007AFF" }]}
-                  >
-                    Manage Individual Jars
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -464,329 +328,195 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: theme.fontSize.xxl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
   },
   addButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.primary,
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: theme.borderRadius.round,
     justifyContent: "center",
     alignItems: "center",
   },
   statsContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 12,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
   statCard: {
     flex: 1,
-    backgroundColor: "white",
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
     alignItems: "center",
-    shadowColor: "#000",
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
+  statCardActive: {
+    backgroundColor: theme.colors.primary,
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.lg,
+    borderColor: theme.colors.primaryDark,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
   statNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: theme.fontSize.xxl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+  },
+  statNumberActive: {
+    color: theme.colors.surface,
   },
   statLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+  },
+  statLabelActive: {
+    color: theme.colors.surface,
   },
   filterSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
   },
   filterTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  filterButtons: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#e0e0e0",
-  },
-  filterButtonActive: {
-    backgroundColor: "#007AFF",
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
-  },
-  filterButtonTextActive: {
-    color: "white",
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
   },
   categoryButtons: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   categoryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: "#e0e0e0",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: theme.spacing.sm,
+    borderWidth: 0.5,
+    borderColor: theme.colors.primary,
   },
   categoryButtonActive: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primaryDark,
   },
   categoryIcon: {
-    fontSize: 16,
+    fontSize: theme.fontSize.md,
   },
   categoryButtonText: {
-    fontSize: 13,
-    color: "#666",
-    fontWeight: "500",
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
   },
   categoryButtonTextActive: {
-    color: "white",
+    color: theme.colors.surface,
   },
   batchesSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
   batchesTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   batchCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    ...theme.shadow.small,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: theme.spacing.md,
   },
   batchName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
     flex: 1,
-    marginRight: 12,
+    marginRight: theme.spacing.md,
   },
   categoryChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.lg,
   },
   categoryChipText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#333",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
   },
   cardDetails: {
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   detailRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: theme.spacing.sm,
   },
   detailText: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
   },
   jarStats: {
-    marginTop: 8,
-    paddingTop: 8,
+    marginTop: theme.spacing.sm,
+    paddingTop: theme.spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
+    borderTopColor: theme.colors.borderLight,
   },
   jarStatsText: {
-    fontSize: 13,
-    color: "#666",
-    fontWeight: "500",
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
   },
   emptyState: {
     alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: theme.spacing.xxxl + theme.spacing.sm,
   },
   emptyText: {
-    fontSize: 16,
-    color: "#999",
-    marginTop: 12,
-    fontWeight: "500",
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textLight,
+    marginTop: theme.spacing.md,
+    fontWeight: theme.fontWeight.medium,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: "#ccc",
-    marginTop: 4,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textLight,
+    marginTop: theme.spacing.xs,
     textAlign: "center",
-  },
-
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "white",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  modalClose: {
-    fontSize: 16,
-    color: "#666",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-  },
-  modalAction: {
-    fontSize: 16,
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  modalSection: {
-    marginVertical: 16,
-  },
-  modalBatchName: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 8,
-  },
-  modalCategoryChip: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  modalCategoryText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-  },
-  modalSectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-  },
-  modalDetailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    gap: 12,
-  },
-  modalDetailLabel: {
-    fontSize: 16,
-    color: "#666",
-    minWidth: 100,
-  },
-  modalDetailValue: {
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "500",
-    flex: 1,
-  },
-  modalStatsGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  modalStatCard: {
-    flex: 1,
-    backgroundColor: "#f8f9fa",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  modalStatNumber: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  modalStatLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-  },
-  modalNotesBox: {
-    backgroundColor: "#f8f9fa",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  modalNotesText: {
-    fontSize: 16,
-    color: "#333",
-    lineHeight: 22,
-  },
-  modalActionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 12,
-    gap: 8,
-  },
-  modalSecondaryButton: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "#007AFF",
-  },
-  modalActionButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "white",
   },
 });

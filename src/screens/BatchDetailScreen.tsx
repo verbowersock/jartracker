@@ -6,12 +6,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ScrollView,
+  TextInput,
+  Image,
+  Modal,
+  Dimensions,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome6 } from "@expo/vector-icons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
 import { getDb, markJarUsed, CATEGORIES } from "../db";
+import { theme } from "../theme";
 
 type Route = RouteProp<RootStackParamList, "BatchDetail">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -34,51 +42,257 @@ const getCategoryName = (categoryId: string) => {
   return category?.name ?? "Other";
 };
 
+const getCategoryColor = (categoryId: string) => {
+  return (
+    theme.categoryColors[categoryId as keyof typeof theme.categoryColors] ??
+    theme.categoryColors.other
+  );
+};
+
 export default function BatchDetailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { batchName, itemTypeId, fillDate } = route.params;
+  const { batchName, itemTypeId, fillDate, batchId } = route.params;
+
+  // Validate required parameters
+  if (!batchName || !itemTypeId || !fillDate || !batchId) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.emptyText}>Invalid batch parameters</Text>
+        <TouchableOpacity
+          style={{
+            marginTop: 16,
+            padding: 12,
+            backgroundColor: theme.colors.primary,
+            borderRadius: 8,
+          }}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: "white", textAlign: "center" }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const [jars, setJars] = React.useState<JarWithDetails[]>([]);
   const [itemType, setItemType] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+  const [showIndividualJars, setShowIndividualJars] = React.useState(false);
+  const [isEditingRecipe, setIsEditingRecipe] = React.useState(false);
+  const [isEditingNotes, setIsEditingNotes] = React.useState(false);
+  const [recipeText, setRecipeText] = React.useState("");
+  const [notesText, setNotesText] = React.useState("");
+  const [isRecipeExpanded, setIsRecipeExpanded] = React.useState(false);
+  const [isNotesExpanded, setIsNotesExpanded] = React.useState(false);
+  const [recipeImage, setRecipeImage] = React.useState<string | null>(null);
+  const [isImageModalVisible, setIsImageModalVisible] = React.useState(false);
+  const [isEditingDetails, setIsEditingDetails] = React.useState(false);
+  const [jarSizeText, setJarSizeText] = React.useState("");
+  const [locationText, setLocationText] = React.useState("");
+  const [dateCannedText, setDateCannedText] = React.useState("");
 
   const loadData = React.useCallback(async () => {
     try {
+      console.log("Loading batch data with params:", {
+        itemTypeId,
+        fillDate,
+        batchId,
+      });
       const db = await getDb();
 
+      if (!db) {
+        throw new Error("Database connection failed");
+      }
+
       // Get item type details
+      console.log("Fetching item type for ID:", itemTypeId);
       const itemTypeData = await db.getFirstAsync<any>(
         "SELECT * FROM item_types WHERE id = ?",
-        itemTypeId
+        [itemTypeId]
       );
+      console.log("Item type data:", itemTypeData);
       setItemType(itemTypeData);
 
-      // Get jars for this specific batch (same item type and fill date)
-      const fillDateStart = fillDate + "T00:00:00.000Z";
-      const fillDateEnd = fillDate + "T23:59:59.999Z";
+      // Initialize editable text fields
+      setRecipeText(itemTypeData?.recipe || "");
+      setNotesText(itemTypeData?.notes || "");
+      setRecipeImage(itemTypeData?.recipe_image || null);
 
+      // Get jars for this specific batch using batchId
+      console.log("Fetching jars for batch ID:", batchId);
       const batchJars = await db.getAllAsync<JarWithDetails>(
         `SELECT * FROM jars 
-         WHERE itemTypeId = ? AND fillDateISO >= ? AND fillDateISO <= ?
+         WHERE batchId = ?
          ORDER BY id ASC`,
-        itemTypeId,
-        fillDateStart,
-        fillDateEnd
+        [batchId]
       );
+      console.log("Found jars:", batchJars.length);
 
       setJars(batchJars);
+
+      // Initialize editable detail fields
+      setJarSizeText(batchJars[0]?.jarSize || "");
+      setLocationText(batchJars[0]?.location || "");
+      // Format date for editing (YYYY-MM-DD format)
+      const dateForEdit = batchJars[0]?.fillDateISO
+        ? batchJars[0].fillDateISO.split("T")[0]
+        : fillDate.split("T")[0];
+      setDateCannedText(dateForEdit);
     } catch (error) {
       console.error("Error loading batch data:", error);
-      Alert.alert("Error", "Failed to load batch data");
+      Alert.alert("Error", `Failed to load batch data: ${error.message}`);
     } finally {
       setLoading(false);
     }
-  }, [itemTypeId, fillDate]);
+  }, [itemTypeId, fillDate, batchId]);
 
   React.useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const saveRecipe = async () => {
+    try {
+      const db = await getDb();
+      await db.runAsync(
+        "UPDATE item_types SET recipe = ?, recipe_image = ? WHERE id = ?",
+        [recipeText, recipeImage, itemTypeId]
+      );
+      setItemType((prev) => ({
+        ...prev,
+        recipe: recipeText,
+        recipe_image: recipeImage,
+      }));
+      setIsEditingRecipe(false);
+    } catch (error) {
+      console.error("Error saving recipe:", error);
+      Alert.alert("Error", "Failed to save recipe");
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      // Request permission
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permissionResult.granted === false) {
+        Alert.alert(
+          "Permission Required",
+          "Please allow access to your photo library to add recipe images."
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setRecipeImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to pick image");
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      // Request permission
+      const permissionResult =
+        await ImagePicker.requestCameraPermissionsAsync();
+
+      if (permissionResult.granted === false) {
+        Alert.alert(
+          "Permission Required",
+          "Please allow access to your camera to take recipe photos."
+        );
+        return;
+      }
+
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setRecipeImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Error taking photo:", error);
+      Alert.alert("Error", "Failed to take photo");
+    }
+  };
+
+  const showImagePicker = () => {
+    Alert.alert("Add Recipe Image", "Choose how you'd like to add an image", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Camera", onPress: takePhoto },
+      { text: "Photo Library", onPress: pickImage },
+    ]);
+  };
+
+  const saveNotes = async () => {
+    try {
+      const db = await getDb();
+      await db.runAsync("UPDATE item_types SET notes = ? WHERE id = ?", [
+        notesText,
+        itemTypeId,
+      ]);
+      setItemType((prev) => ({ ...prev, notes: notesText }));
+      setIsEditingNotes(false);
+    } catch (error) {
+      console.error("Error saving notes:", error);
+      Alert.alert("Error", "Failed to save notes");
+    }
+  };
+
+  const saveDetails = async () => {
+    try {
+      const db = await getDb();
+
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateCannedText && !dateRegex.test(dateCannedText)) {
+        Alert.alert("Invalid Date", "Please enter date in YYYY-MM-DD format");
+        return;
+      }
+
+      // Update all jars in this batch with new details
+      await db.runAsync(
+        "UPDATE jars SET jarSize = ?, location = ?, fillDateISO = ? WHERE batchId = ?",
+        [jarSizeText, locationText, dateCannedText, batchId]
+      );
+
+      // Reload the data to reflect changes
+      await loadData();
+      setIsEditingDetails(false);
+    } catch (error) {
+      console.error("Error saving details:", error);
+      Alert.alert("Error", "Failed to save details");
+    }
+  };
+
+  const isTextLong = (text: string) => {
+    return text.length > 200 || text.split("\n").length > 4;
+  };
+
+  const getTruncatedText = (text: string) => {
+    const lines = text.split("\n");
+    if (lines.length > 4) {
+      return lines.slice(0, 4).join("\n") + "...";
+    }
+    if (text.length > 200) {
+      return text.substring(0, 200) + "...";
+    }
+    return text;
+  };
 
   const handleMarkUsed = async (jarId: number) => {
     Alert.alert(
@@ -94,7 +308,11 @@ export default function BatchDetailScreen() {
               await markJarUsed(jarId);
               await loadData();
             } catch (error) {
-              Alert.alert("Error", "Failed to mark jar as used");
+              console.error("Error marking jar as used:", error);
+              Alert.alert(
+                "Error",
+                `Failed to mark jar as used: ${error.message}`
+              );
             }
           },
         },
@@ -123,129 +341,438 @@ export default function BatchDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.title}>{batchName}</Text>
+      <ScrollView
+        style={styles.modalContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Batch Name and Category */}
+        <View style={styles.modalSection}>
+          <Text style={styles.modalBatchName}>{batchName}</Text>
           {itemType?.category && (
-            <View style={styles.categoryContainer}>
-              <Text style={styles.categoryIcon}>
-                {getCategoryIcon(itemType.category)}
-              </Text>
-              <Text style={styles.categoryText}>
+            <View
+              style={[
+                styles.modalCategoryChip,
+                {
+                  backgroundColor: getCategoryColor(itemType.category),
+                },
+              ]}
+            >
+              <Text style={styles.modalCategoryText}>
+                {getCategoryIcon(itemType.category)}{" "}
                 {getCategoryName(itemType.category)}
               </Text>
             </View>
           )}
-          <Text style={styles.subtitle}>
-            Filled: {new Date(fillDate).toLocaleDateString()}
-          </Text>
         </View>
-      </View>
 
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{jars.length}</Text>
-          <Text style={styles.statLabel}>Total Jars</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: "#2e7d32" }]}>
-            {availableJars.length}
-          </Text>
-          <Text style={styles.statLabel}>Available</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: "#d32f2f" }]}>
-            {usedJars.length}
-          </Text>
-          <Text style={styles.statLabel}>Used</Text>
-        </View>
-      </View>
-
-      {/* Actions */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleGenerateLabels}
-        >
-          <Ionicons name="qr-code-outline" size={20} color="white" />
-          <Text style={styles.actionButtonText}>Generate All Labels</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Jar List */}
-      <FlatList
-        data={jars}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item, index }) => (
-          <View style={[styles.jarCard, item.used && styles.jarCardUsed]}>
-            <View style={styles.jarHeader}>
-              <Text style={styles.jarNumber}>Jar #{index + 1}</Text>
-              <View style={styles.jarStatus}>
-                <Text
-                  style={[
-                    styles.statusText,
-                    { color: item.used ? "#d32f2f" : "#2e7d32" },
-                  ]}
-                >
-                  {item.used ? "USED" : "AVAILABLE"}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.jarDetails}>
-              {item.jarSize && (
-                <View style={styles.detailRow}>
-                  <Ionicons name="resize-outline" size={16} color="#666" />
-                  <Text style={styles.detailText}>Size: {item.jarSize}</Text>
-                </View>
-              )}
-
-              {item.location && (
-                <View style={styles.detailRow}>
-                  <Ionicons name="location-outline" size={16} color="#666" />
-                  <Text style={styles.detailText}>
-                    Location: {item.location}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.jarActions}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() =>
-                  navigation.navigate("QRLabel", { jarId: item.id })
+        {/* Key Details */}
+        <View style={styles.modalSection}>
+          <View style={styles.editableHeader}>
+            <Text style={styles.modalSectionTitle}>Details</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (isEditingDetails) {
+                  saveDetails();
+                } else {
+                  setIsEditingDetails(true);
                 }
-              >
-                <Ionicons name="qr-code-outline" size={16} color="white" />
-                <Text style={styles.actionBtnText}>Label</Text>
-              </TouchableOpacity>
+              }}
+            >
+              <Ionicons
+                name={isEditingDetails ? "checkmark-outline" : "create-outline"}
+                size={20}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
+          </View>
 
-              {!item.used && (
+          {/* Jar Size */}
+          <View style={styles.modalDetailRow}>
+            <View style={styles.detailIconContainer}>
+              <FontAwesome6 name="jar" size={20} color="#666" />
+            </View>
+            <Text style={styles.modalDetailLabel}>Jar Size:</Text>
+            {isEditingDetails ? (
+              <TextInput
+                style={styles.detailInput}
+                value={jarSizeText}
+                onChangeText={setJarSizeText}
+                placeholder="e.g., 16 oz, Quart"
+              />
+            ) : (
+              <Text style={styles.modalDetailValue}>
+                {jarSizeText || "Not specified"}
+              </Text>
+            )}
+          </View>
+
+          {/* Date Canned */}
+          <View style={styles.modalDetailRow}>
+            <View style={styles.detailIconContainer}>
+              <Ionicons name="calendar-outline" size={20} color="#666" />
+            </View>
+            <Text style={styles.modalDetailLabel}>Date Canned:</Text>
+            {isEditingDetails ? (
+              <TextInput
+                style={styles.detailInput}
+                value={dateCannedText}
+                onChangeText={setDateCannedText}
+                placeholder="YYYY-MM-DD"
+              />
+            ) : (
+              <Text style={styles.modalDetailValue}>
+                {new Date(
+                  jars[0]?.fillDateISO || fillDate
+                ).toLocaleDateString()}
+              </Text>
+            )}
+          </View>
+
+          {/* Location */}
+          <View style={styles.modalDetailRow}>
+            <View style={styles.detailIconContainer}>
+              <Ionicons name="location-outline" size={20} color="#666" />
+            </View>
+            <Text style={styles.modalDetailLabel}>Location:</Text>
+            {isEditingDetails ? (
+              <TextInput
+                style={styles.detailInput}
+                value={locationText}
+                onChangeText={setLocationText}
+                placeholder="e.g., Pantry, Basement"
+              />
+            ) : (
+              <Text style={styles.modalDetailValue}>
+                {locationText || "Not specified"}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Jar Statistics */}
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionTitle}>Jar Inventory</Text>
+
+          <View style={styles.modalStatsGrid}>
+            <View style={styles.modalStatCard}>
+              <Text style={styles.modalStatNumber}>{jars.length}</Text>
+              <Text style={styles.modalStatLabel}>Total</Text>
+            </View>
+            <View style={styles.modalStatCard}>
+              <Text style={[styles.modalStatNumber, { color: "#2e7d32" }]}>
+                {availableJars.length}
+              </Text>
+              <Text style={styles.modalStatLabel}>Available</Text>
+            </View>
+            <View style={styles.modalStatCard}>
+              <Text style={[styles.modalStatNumber, { color: "#d32f2f" }]}>
+                {usedJars.length}
+              </Text>
+              <Text style={styles.modalStatLabel}>Used</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Recipe */}
+        <View style={styles.modalSection}>
+          <View style={styles.editableHeader}>
+            <Text style={styles.modalSectionTitle}>Recipe</Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                onPress={showImagePicker}
+                style={styles.imageButton}
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (isEditingRecipe) {
+                    saveRecipe();
+                  } else {
+                    setIsEditingRecipe(true);
+                  }
+                }}
+              >
+                <Ionicons
+                  name={
+                    isEditingRecipe ? "checkmark-outline" : "create-outline"
+                  }
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Recipe Image */}
+          {recipeImage && (
+            <View style={styles.recipeImageContainer}>
+              <TouchableOpacity
+                onPress={() => setIsImageModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Image
+                  source={{ uri: recipeImage }}
+                  style={styles.recipeImage}
+                />
+                {/* Zoom indicator */}
+                <View style={styles.zoomIndicator}>
+                  <Ionicons name="expand-outline" size={20} color="white" />
+                </View>
+              </TouchableOpacity>
+              {/* Delete button only shows when editing */}
+              {isEditingRecipe && (
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.markUsedBtn]}
-                  onPress={() => handleMarkUsed(item.id)}
+                  style={styles.removeImageButton}
+                  onPress={() => setRecipeImage(null)}
                 >
-                  <Ionicons name="checkmark-outline" size={16} color="white" />
-                  <Text style={styles.actionBtnText}>Mark Used</Text>
+                  <Ionicons name="close-circle" size={24} color="#d32f2f" />
                 </TouchableOpacity>
               )}
             </View>
+          )}
+
+          {isEditingRecipe ? (
+            <TextInput
+              style={styles.editableInput}
+              value={recipeText}
+              onChangeText={setRecipeText}
+              placeholder="Add recipe instructions..."
+              multiline
+              textAlignVertical="top"
+            />
+          ) : (
+            <View>
+              <TouchableOpacity
+                style={styles.modalNotesBox}
+                onPress={() => setIsEditingRecipe(true)}
+              >
+                <Text style={styles.modalNotesText}>
+                  {recipeText
+                    ? isRecipeExpanded || !isTextLong(recipeText)
+                      ? recipeText
+                      : getTruncatedText(recipeText)
+                    : "Tap to add recipe instructions..."}
+                </Text>
+              </TouchableOpacity>
+              {recipeText && isTextLong(recipeText) && (
+                <TouchableOpacity
+                  style={styles.expandButton}
+                  onPress={() => setIsRecipeExpanded(!isRecipeExpanded)}
+                >
+                  <Text style={styles.expandButtonText}>
+                    {isRecipeExpanded ? "Show Less" : "Show More"}
+                  </Text>
+                  <Ionicons
+                    name={
+                      isRecipeExpanded
+                        ? "chevron-up-outline"
+                        : "chevron-down-outline"
+                    }
+                    size={16}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Notes */}
+        <View style={styles.modalSection}>
+          <View style={styles.editableHeader}>
+            <Text style={styles.modalSectionTitle}>Notes</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (isEditingNotes) {
+                  saveNotes();
+                } else {
+                  setIsEditingNotes(true);
+                }
+              }}
+            >
+              <Ionicons
+                name={isEditingNotes ? "checkmark-outline" : "create-outline"}
+                size={20}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
+          </View>
+          {isEditingNotes ? (
+            <TextInput
+              style={styles.editableInput}
+              value={notesText}
+              onChangeText={setNotesText}
+              placeholder="Add notes..."
+              multiline
+              textAlignVertical="top"
+            />
+          ) : (
+            <View>
+              <TouchableOpacity
+                style={styles.modalNotesBox}
+                onPress={() => setIsEditingNotes(true)}
+              >
+                <Text style={styles.modalNotesText}>
+                  {notesText
+                    ? isNotesExpanded || !isTextLong(notesText)
+                      ? notesText
+                      : getTruncatedText(notesText)
+                    : "Tap to add notes..."}
+                </Text>
+              </TouchableOpacity>
+              {notesText && isTextLong(notesText) && (
+                <TouchableOpacity
+                  style={styles.expandButton}
+                  onPress={() => setIsNotesExpanded(!isNotesExpanded)}
+                >
+                  <Text style={styles.expandButtonText}>
+                    {isNotesExpanded ? "Show Less" : "Show More"}
+                  </Text>
+                  <Ionicons
+                    name={
+                      isNotesExpanded
+                        ? "chevron-up-outline"
+                        : "chevron-down-outline"
+                    }
+                    size={16}
+                    color={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Actions */}
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionTitle}>Actions</Text>
+
+          <TouchableOpacity
+            style={styles.modalActionButton}
+            onPress={handleGenerateLabels}
+          >
+            <Ionicons name="qr-code-outline" size={20} color="white" />
+            <Text style={styles.modalActionButtonText}>Generate QR Labels</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modalActionButton, styles.modalSecondaryButton]}
+            onPress={() => setShowIndividualJars(!showIndividualJars)}
+          >
+            <Ionicons
+              name={showIndividualJars ? "chevron-up-outline" : "list-outline"}
+              size={20}
+              color={theme.colors.primary}
+            />
+            <Text
+              style={[
+                styles.modalActionButtonText,
+                { color: theme.colors.primary },
+              ]}
+            >
+              {showIndividualJars
+                ? "Hide Individual Jars"
+                : "Manage Individual Jars"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Individual Jar Management */}
+        {showIndividualJars && (
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Individual Jars</Text>
+
+            {jars.length > 0 ? (
+              jars.map((item, index) => (
+                <View key={item.id} style={styles.jarCard}>
+                  <View style={styles.jarHeader}>
+                    <Text style={styles.jarNumber}>Jar #{index + 1}</Text>
+                    <View style={styles.jarStatus}>
+                      <Text
+                        style={[
+                          styles.statusText,
+                          { color: item.used ? "#d32f2f" : "#2e7d32" },
+                        ]}
+                      >
+                        {item.used ? "USED" : "AVAILABLE"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.jarActions}>
+                    <TouchableOpacity
+                      style={styles.actionBtn}
+                      onPress={() =>
+                        navigation.navigate("QRLabel", { jarId: item.id })
+                      }
+                    >
+                      <Ionicons
+                        name="qr-code-outline"
+                        size={16}
+                        color="white"
+                      />
+                      <Text style={styles.actionBtnText}>Label</Text>
+                    </TouchableOpacity>
+
+                    {!item.used && (
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.markUsedBtn]}
+                        onPress={() => handleMarkUsed(item.id)}
+                      >
+                        <Ionicons
+                          name="checkmark-outline"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.actionBtnText}>Mark Used</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No jars in this batch</Text>
+            )}
           </View>
         )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No jars in this batch</Text>
-        }
-        showsVerticalScrollIndicator={false}
-      />
+      </ScrollView>
+
+      {/* Fullscreen Image Modal */}
+      {recipeImage && (
+        <Modal
+          visible={isImageModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setIsImageModalVisible(false)}
+        >
+          <View style={styles.fullscreenModalContainer}>
+            <TouchableOpacity
+              style={styles.fullscreenModalBackground}
+              activeOpacity={1}
+              onPress={() => setIsImageModalVisible(false)}
+            >
+              <Image
+                source={{ uri: recipeImage }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+
+            {/* Close button */}
+            <TouchableOpacity
+              style={styles.fullscreenCloseButton}
+              onPress={() => setIsImageModalVisible(false)}
+            >
+              <Ionicons name="close" size={30} color="white" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -253,50 +780,48 @@ export default function BatchDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: theme.colors.background,
   },
   centered: {
     justifyContent: "center",
     alignItems: "center",
   },
   header: {
-    backgroundColor: "white",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
   },
   backButton: {
-    marginRight: 16,
+    marginRight: theme.spacing.lg,
   },
   headerContent: {
     flex: 1,
   },
   title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 4,
+    fontSize: theme.fontSize.xl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   categoryContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: theme.spacing.xs,
   },
   categoryIcon: {
-    fontSize: 16,
-    marginRight: 6,
+    fontSize: theme.fontSize.md,
+    marginRight: theme.spacing.sm,
   },
   categoryText: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
   },
   statsContainer: {
     flexDirection: "row",
@@ -331,19 +856,21 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   actionButton: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryDark,
   },
   actionButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 16,
+    color: theme.colors.surface,
+    fontWeight: theme.fontWeight.semibold,
+    fontSize: theme.fontSize.md,
   },
   jarCard: {
     backgroundColor: "white",
@@ -423,5 +950,257 @@ const styles = StyleSheet.create({
     color: "#999",
     marginTop: 32,
     fontSize: 16,
+  },
+  recipeContainer: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.lg,
+    marginVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  recipeTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  recipeText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
+  },
+  notesContainer: {
+    backgroundColor: theme.colors.surface,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  notesTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  notesText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
+  },
+  // Modal-style layout
+  modalContent: {
+    flex: 1,
+  },
+  modalSection: {
+    marginVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
+  },
+  modalBatchName: {
+    fontSize: theme.fontSize.xxl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  modalCategoryChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.xl,
+  },
+  modalCategoryText: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+  },
+  modalSectionTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
+  },
+  modalDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: theme.spacing.sm,
+    minHeight: 44, // Consistent height for both text and input rows
+  },
+  detailIconContainer: {
+    width: 32, // Fixed width for consistent alignment
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDetailLabel: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    width: 130, // Reduced width to bring data closer
+    marginLeft: theme.spacing.sm, // Space after icon
+  },
+  modalDetailValue: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    fontWeight: theme.fontWeight.medium,
+    flex: 1,
+    marginLeft: theme.spacing.xs, // Small gap between label and value
+  },
+  modalStatsGrid: {
+    flexDirection: "row",
+    gap: theme.spacing.md,
+  },
+  modalStatCard: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalStatNumber: {
+    fontSize: theme.fontSize.xl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+  },
+  modalStatLabel: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+  },
+  modalNotesBox: {
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalNotesText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    lineHeight: 22,
+  },
+  modalActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  modalSecondaryButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  modalActionButtonText: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.surface,
+  },
+  editableHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+  },
+  imageButton: {
+    padding: theme.spacing.xs,
+  },
+  editableInput: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  detailInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.sm,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    height: 40, // Fixed height to match the text values
+    marginLeft: theme.spacing.xs, // Match the value margin for alignment
+  },
+  expandButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    gap: theme.spacing.xs,
+  },
+  expandButtonText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  recipeImageContainer: {
+    position: "relative",
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    overflow: "hidden",
+  },
+  recipeImage: {
+    width: "100%",
+    height: 200,
+    backgroundColor: theme.colors.surface,
+  },
+  removeImageButton: {
+    position: "absolute",
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 12,
+  },
+  zoomIndicator: {
+    position: "absolute",
+    bottom: theme.spacing.sm,
+    left: theme.spacing.sm,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 16,
+    padding: 6,
+  },
+  fullscreenModalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenModalBackground: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenImage: {
+    width: Dimensions.get("window").width,
+    height: Dimensions.get("window").height,
+  },
+  fullscreenCloseButton: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderRadius: 20,
+    padding: 10,
+    zIndex: 1,
   },
 });

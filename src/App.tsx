@@ -3,6 +3,7 @@ import {
   NavigationContainer,
   DefaultTheme,
   Theme,
+  getFocusedRouteNameFromRoute,
 } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -15,12 +16,19 @@ import AddBatchScreen from "./screens/AddBatchScreen";
 import QRLabelScreen from "./screens/QRLabelScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import BackupRestoreScreen from "./screens/BackupRestoreScreen";
+import StatisticsScreen from "./screens/StatisticsScreen";
+import { theme } from "./theme";
 
 export type RootStackParamList = {
   Tabs: undefined;
   ItemTypeForm: { itemTypeId?: number } | undefined;
   ItemDetail: { itemTypeId: number };
-  BatchDetail: { batchName: string; itemTypeId: number; fillDate: string };
+  BatchDetail: {
+    batchName: string;
+    itemTypeId: number;
+    fillDate: string;
+    batchId: string;
+  };
   AddBatch: undefined;
   QRLabel: { jarId: number; batchIds?: number[] };
   QRScanner: undefined;
@@ -29,6 +37,7 @@ export type RootStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
+  Statistics: undefined;
   Backup: undefined;
   Scan: undefined;
 };
@@ -41,11 +50,14 @@ function Tabs() {
     <Tab.Navigator
       id={undefined}
       screenOptions={({ route }) => ({
+        headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
 
           if (route.name === "Home") {
             iconName = focused ? "home" : "home-outline";
+          } else if (route.name === "Statistics") {
+            iconName = focused ? "bar-chart" : "bar-chart-outline";
           } else if (route.name === "Backup") {
             iconName = focused ? "cloud-download" : "cloud-download-outline";
           } else if (route.name === "Scan") {
@@ -56,11 +68,12 @@ function Tabs() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: "#2e7d32",
+        tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "gray",
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Statistics" component={StatisticsScreen} />
       <Tab.Screen name="Backup" component={BackupRestoreScreen} />
       <Tab.Screen name="Scan" component={QRScannerScreen} />
     </Tab.Navigator>
@@ -77,7 +90,9 @@ export default function App() {
         <Stack.Screen
           name="Tabs"
           component={Tabs}
-          options={{ headerShown: false }}
+          options={({ route }) => ({
+            headerTitle: getFocusedRouteNameFromRoute(route) ?? "Home",
+          })}
         />
         <Stack.Screen
           name="ItemTypeForm"
@@ -92,7 +107,7 @@ export default function App() {
         <Stack.Screen
           name="BatchDetail"
           component={BatchDetailScreen}
-          options={{ title: "Batch Detail", headerShown: false }}
+          options={{ title: "Batch Details" }}
         />
         <Stack.Screen
           name="AddBatch"
