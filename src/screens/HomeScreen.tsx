@@ -7,7 +7,9 @@ import {
   StyleSheet,
   ScrollView,
   SafeAreaView,
+  StatusBar,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { getAllBatches, getJarStats, CATEGORIES } from "../db";
@@ -37,6 +39,7 @@ type Batch = {
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [batches, setBatches] = React.useState<Batch[]>([]);
   const [stats, setStats] = React.useState({ total: 0, available: 0, used: 0 });
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
@@ -156,11 +159,15 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={theme.colors.background}
+      />
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Pantry Dashboard</Text>
+          <Text style={styles.headerTitle}>Pantry Dashboard</Text>
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => navigation.navigate("AddBatch")}
@@ -321,7 +328,7 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -331,16 +338,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.lg,
+    ...theme.typography.headerContainer,
   },
-  title: {
-    fontSize: theme.fontSize.xxl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
+  headerTitle: {
+    ...theme.typography.headingTitle,
   },
   addButton: {
     backgroundColor: theme.colors.primary,

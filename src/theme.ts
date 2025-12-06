@@ -73,6 +73,20 @@ export const theme = {
     meats: "#F3E5F5",
     other: "#E0E0E0",
   },
+  typography: {
+    headingTitle: {
+      fontSize: 24, // xxl size
+      fontWeight: "700" as const, // bold
+      color: "#333333", // text color
+    },
+    headerContainer: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingHorizontal: 20,
+      paddingTop: 24,
+    },
+  },
 };
 
 export type Theme = typeof theme;

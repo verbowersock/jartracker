@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
@@ -29,6 +30,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AddBatchScreen() {
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
   const [selectedItemType, setSelectedItemType] =
     React.useState<ItemType | null>(null);
   const [newItemTypeName, setNewItemTypeName] = React.useState("");
@@ -183,17 +185,13 @@ export default function AddBatchScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Add New Batch</Text>
-      </View>
-
+    <ScrollView
+      style={styles.container}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{
+        paddingBottom: insets.bottom + theme.spacing.xl,
+      }}
+    >
       {/* Item Type Selection */}
       <Text style={styles.label}>Item Type</Text>
       <View style={styles.itemTypeSection}>
@@ -249,18 +247,20 @@ export default function AddBatchScreen() {
         onPress={() => setShowCategoryModal(true)}
       >
         <View style={styles.selectContent}>
-          {category ? (
-            <>
-              <Text style={styles.categoryIcon}>
-                {CATEGORIES.find((c) => c.id === category)?.icon}
-              </Text>
-              <Text style={styles.selectText}>
-                {CATEGORIES.find((c) => c.id === category)?.name}
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.placeholderText}>Select category</Text>
-          )}
+          <View style={styles.selectTextContent}>
+            {category ? (
+              <>
+                <Text style={styles.categoryIcon}>
+                  {CATEGORIES.find((c) => c.id === category)?.icon}
+                </Text>
+                <Text style={styles.selectText}>
+                  {CATEGORIES.find((c) => c.id === category)?.name}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.placeholderText}>Select category</Text>
+            )}
+          </View>
           <Ionicons name="chevron-down" size={20} color="#666" />
         </View>
       </TouchableOpacity>
@@ -336,19 +336,22 @@ export default function AddBatchScreen() {
         visible={showCategoryModal}
         animationType="slide"
         presentationStyle="pageSheet"
+        onRequestClose={() => setShowCategoryModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Pressable
-              onPress={() => setShowCategoryModal(false)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel category selection"
-            >
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </Pressable>
+            <View style={styles.modalHeaderSide}>
+              <Pressable
+                onPress={() => setShowCategoryModal(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel category selection"
+              >
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </Pressable>
+            </View>
             <Text style={styles.modalTitle}>Select Category</Text>
-            <View style={{ width: 60 }} />
+            <View style={styles.modalHeaderSide} />
           </View>
 
           <FlatList
@@ -375,6 +378,7 @@ export default function AddBatchScreen() {
         visible={showJarSizeModal}
         animationType="slide"
         presentationStyle="pageSheet"
+        onRequestClose={() => setShowJarSizeModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -413,6 +417,7 @@ export default function AddBatchScreen() {
         visible={showItemTypeModal}
         animationType="slide"
         presentationStyle="pageSheet"
+        onRequestClose={() => setShowItemTypeModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -534,6 +539,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  selectTextContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   selectText: {
     fontSize: theme.fontSize.md,
     color: theme.colors.text,
@@ -628,7 +637,6 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: theme.spacing.xxl,
-    marginBottom: theme.spacing.xxxl + theme.spacing.sm,
     padding: theme.spacing.lg,
     backgroundColor: theme.colors.primary,
     borderRadius: theme.borderRadius.md,
@@ -651,9 +659,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: theme.spacing.lg,
+    padding: theme.spacing.xxl,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+    marginTop: theme.spacing.xxl,
+  },
+  modalHeaderSide: {
+    width: 60,
+    alignItems: "flex-start",
   },
   modalTitle: {
     fontSize: theme.fontSize.lg,

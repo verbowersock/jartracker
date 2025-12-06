@@ -91,6 +91,22 @@ export default function StatisticsScreen() {
         GROUP BY strftime('%Y', j.fillDateISO)
         ORDER BY year DESC
       `);
+
+      // Ensure current year is always available for selection even with no data
+      const currentYear = new Date().getFullYear();
+      const hasCurrentYear = yearlyData.some(
+        (stat) => stat.year === currentYear
+      );
+
+      if (!hasCurrentYear) {
+        yearlyData.unshift({
+          year: currentYear,
+          totalCanned: 0,
+          totalUsed: 0,
+          available: 0,
+        });
+      }
+
       setYearlyStats(yearlyData);
 
       // Load category statistics
@@ -241,29 +257,33 @@ export default function StatisticsScreen() {
       >
         {/* Year Selector */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Year Overview</Text>
+          <View style={styles.headerContainer}>
+            <Text style={styles.headerTitle}>Year Overview</Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.yearSelector}>
-              {yearlyStats.map((yearStat) => (
-                <TouchableOpacity
-                  key={yearStat.year}
-                  style={[
-                    styles.yearButton,
-                    selectedYear === yearStat.year && styles.yearButtonActive,
-                  ]}
-                  onPress={() => setSelectedYear(yearStat.year)}
-                >
-                  <Text
+              {yearlyStats
+                .sort((a, b) => b.year - a.year) // Ensure proper sorting with current year first
+                .map((yearStat) => (
+                  <TouchableOpacity
+                    key={yearStat.year}
                     style={[
-                      styles.yearButtonText,
-                      selectedYear === yearStat.year &&
-                        styles.yearButtonTextActive,
+                      styles.yearButton,
+                      selectedYear === yearStat.year && styles.yearButtonActive,
                     ]}
+                    onPress={() => setSelectedYear(yearStat.year)}
                   >
-                    {yearStat.year}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.yearButtonText,
+                        selectedYear === yearStat.year &&
+                          styles.yearButtonTextActive,
+                      ]}
+                    >
+                      {yearStat.year}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
             </View>
           </ScrollView>
         </View>
@@ -296,7 +316,9 @@ export default function StatisticsScreen() {
               </View>
               <View style={styles.metricCard}>
                 <Ionicons name="trending-up" size={24} color="#7b1fa2" />
-                <Text style={styles.metricNumber}>{usageRate}%</Text>
+                <Text style={styles.metricNumber}>
+                  {usageRate ? `${usageRate}%` : `Unavailable`}
+                </Text>
                 <Text style={styles.metricLabel}>Usage Rate</Text>
               </View>
             </View>
@@ -308,119 +330,130 @@ export default function StatisticsScreen() {
           <Text style={styles.sectionTitle}>
             Category Breakdown ({selectedYear})
           </Text>
-          {categoryStats.map((category) => {
-            const isExpanded = expandedCategories.has(category.category);
-            const itemTypes = getItemTypesForCategory(category.category);
+          {categoryStats.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No categories to show</Text>
+            </View>
+          ) : (
+            categoryStats.map((category) => {
+              const isExpanded = expandedCategories.has(category.category);
+              const itemTypes = getItemTypesForCategory(category.category);
 
-            return (
-              <View key={category.category}>
-                <TouchableOpacity
-                  style={styles.categoryRow}
-                  onPress={() => toggleCategory(category.category)}
-                >
-                  <View style={styles.categoryInfo}>
-                    <Text style={styles.categoryIcon}>
-                      {getCategoryIcon(category.category)}
-                    </Text>
-                    <Text style={styles.categoryName}>
-                      {category.categoryName}
-                    </Text>
-                    <Ionicons
-                      name={
-                        isExpanded
-                          ? "chevron-up-outline"
-                          : "chevron-down-outline"
-                      }
-                      size={20}
-                      color={theme.colors.textSecondary}
-                      style={styles.expandIcon}
-                    />
-                  </View>
-                  <View style={styles.categoryStats}>
-                    <View style={styles.categoryStat}>
-                      <Text style={styles.categoryStatNumber}>
-                        {category.totalCanned}
+              return (
+                <View key={category.category}>
+                  <TouchableOpacity
+                    style={styles.categoryRow}
+                    onPress={() => toggleCategory(category.category)}
+                  >
+                    <View style={styles.categoryInfo}>
+                      <Text style={styles.categoryIcon}>
+                        {getCategoryIcon(category.category)}
                       </Text>
-                      <Text style={styles.categoryStatLabel}>Canned</Text>
-                    </View>
-                    <View style={styles.categoryStat}>
-                      <Text
-                        style={[
-                          styles.categoryStatNumber,
-                          { color: "#d32f2f" },
-                        ]}
-                      >
-                        {category.totalUsed}
+                      <Text style={styles.categoryName}>
+                        {category.categoryName}
                       </Text>
-                      <Text style={styles.categoryStatLabel}>Used</Text>
                     </View>
-                    <View style={styles.categoryStat}>
-                      <Text
-                        style={[
-                          styles.categoryStatNumber,
-                          { color: "#2e7d32" },
-                        ]}
-                      >
-                        {category.available}
-                      </Text>
-                      <Text style={styles.categoryStatLabel}>Available</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                    <View style={styles.categoryStats}>
+                      <View style={styles.categoryStat}>
+                        <Text style={styles.categoryStatNumber}>
+                          {category.totalCanned}
+                        </Text>
+                        <Text style={styles.categoryStatLabel}>Canned</Text>
+                      </View>
+                      <View style={styles.categoryStat}>
+                        <Text
+                          style={[
+                            styles.categoryStatNumber,
+                            { color: "#d32f2f" },
+                          ]}
+                        >
+                          {category.totalUsed}
+                        </Text>
+                        <Text style={styles.categoryStatLabel}>Used</Text>
+                      </View>
+                      <View style={styles.categoryStat}>
+                        <Text
+                          style={[
+                            styles.categoryStatNumber,
+                            { color: "#2e7d32" },
+                          ]}
+                        >
+                          {category.available}
+                        </Text>
 
-                {/* Expanded Item Types */}
-                {isExpanded && itemTypes.length > 0 && (
-                  <View style={styles.itemTypesContainer}>
-                    {itemTypes.map((itemType, index) => (
-                      <View
-                        key={itemType.id}
-                        style={[
-                          styles.itemTypeRow,
-                          index === itemTypes.length - 1 && {
-                            borderBottomWidth: 0,
-                          },
-                        ]}
-                      >
-                        <Text style={styles.itemTypeName}>{itemType.name}</Text>
-                        <View style={styles.itemTypeStats}>
-                          <View style={styles.itemTypeStat}>
-                            <Text style={styles.itemTypeStatNumber}>
-                              {itemType.totalCanned}
-                            </Text>
-                            <Text style={styles.itemTypeStatLabel}>Canned</Text>
-                          </View>
-                          <View style={styles.itemTypeStat}>
-                            <Text
-                              style={[
-                                styles.itemTypeStatNumber,
-                                { color: "#d32f2f" },
-                              ]}
-                            >
-                              {itemType.totalUsed}
-                            </Text>
-                            <Text style={styles.itemTypeStatLabel}>Used</Text>
-                          </View>
-                          <View style={styles.itemTypeStat}>
-                            <Text
-                              style={[
-                                styles.itemTypeStatNumber,
-                                { color: "#2e7d32" },
-                              ]}
-                            >
-                              {itemType.available}
-                            </Text>
-                            <Text style={styles.itemTypeStatLabel}>
-                              Available
-                            </Text>
+                        <Text style={styles.categoryStatLabel}>Available</Text>
+                      </View>
+                      <Ionicons
+                        name={
+                          isExpanded
+                            ? "chevron-up-outline"
+                            : "chevron-down-outline"
+                        }
+                        size={20}
+                        color={theme.colors.textSecondary}
+                        style={styles.expandIcon}
+                      />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Expanded Item Types */}
+                  {isExpanded && itemTypes.length > 0 && (
+                    <View style={styles.itemTypesContainer}>
+                      {itemTypes.map((itemType, index) => (
+                        <View
+                          key={itemType.id}
+                          style={[
+                            styles.itemTypeRow,
+                            index === itemTypes.length - 1 && {
+                              borderBottomWidth: 0,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.itemTypeName}>
+                            {itemType.name}
+                          </Text>
+                          <View style={styles.itemTypeStats}>
+                            <View style={styles.itemTypeStat}>
+                              <Text style={styles.itemTypeStatNumber}>
+                                {itemType.totalCanned}
+                              </Text>
+                              <Text style={styles.itemTypeStatLabel}>
+                                Canned
+                              </Text>
+                            </View>
+                            <View style={styles.itemTypeStat}>
+                              <Text
+                                style={[
+                                  styles.itemTypeStatNumber,
+                                  { color: "#d32f2f" },
+                                ]}
+                              >
+                                {itemType.totalUsed}
+                              </Text>
+                              <Text style={styles.itemTypeStatLabel}>Used</Text>
+                            </View>
+                            <View style={styles.itemTypeStat}>
+                              <Text
+                                style={[
+                                  styles.itemTypeStatNumber,
+                                  { color: "#2e7d32" },
+                                ]}
+                              >
+                                {itemType.available}
+                              </Text>
+                              <Text style={styles.itemTypeStatLabel}>
+                                Available
+                              </Text>
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          })}
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          )}
         </View>
 
         {/* Monthly Trends */}
@@ -484,27 +517,33 @@ export default function StatisticsScreen() {
         {/* Yearly Comparison */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Yearly Comparison</Text>
-          {yearlyStats.map((year) => {
-            const yearUsageRate = Math.round(
-              (year.totalUsed / year.totalCanned) * 100
-            );
-            return (
-              <View key={year.year} style={styles.yearComparisonRow}>
-                <Text style={styles.yearComparisonYear}>{year.year}</Text>
-                <View style={styles.yearComparisonStats}>
-                  <Text style={styles.yearComparisonStat}>
-                    {year.totalCanned} canned
-                  </Text>
-                  <Text style={styles.yearComparisonStat}>
-                    {year.totalUsed} used
-                  </Text>
-                  <Text style={styles.yearComparisonStat}>
-                    {yearUsageRate}% rate
-                  </Text>
+          {yearlyStats.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No stats to show</Text>
+            </View>
+          ) : (
+            yearlyStats.map((year) => {
+              const yearUsageRate = Math.round(
+                (year.totalUsed / year.totalCanned) * 100
+              );
+              return (
+                <View key={year.year} style={styles.yearComparisonRow}>
+                  <Text style={styles.yearComparisonYear}>{year.year}</Text>
+                  <View style={styles.yearComparisonStats}>
+                    <Text style={styles.yearComparisonStat}>
+                      {year.totalCanned} canned
+                    </Text>
+                    <Text style={styles.yearComparisonStat}>
+                      {year.totalUsed} used
+                    </Text>
+                    <Text style={styles.yearComparisonStat}>
+                      {yearUsageRate ? `${yearUsageRate}% rate` : ``}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </View>
@@ -522,6 +561,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  headerContainer: {
+    ...theme.typography.headerContainer,
+    paddingHorizontal: 0,
+  },
+  headerTitle: {
+    ...theme.typography.headingTitle,
+    paddingVertical: theme.spacing.xl,
   },
   section: {
     marginVertical: theme.spacing.lg,
@@ -612,6 +659,7 @@ const styles = StyleSheet.create({
   },
   expandIcon: {
     marginLeft: theme.spacing.sm,
+    alignSelf: "center",
   },
   categoryStats: {
     flexDirection: "row",
@@ -752,5 +800,14 @@ const styles = StyleSheet.create({
   itemTypeStatLabel: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.textSecondary,
+  },
+  emptyContainer: {
+    paddingVertical: theme.spacing.xl,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
   },
 });

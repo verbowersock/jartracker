@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mypantry",
-    "slug": "mypantry",
+    "name": "Jar Tracker",
+    "slug": "jartracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.veronikab.mypantry"
+      "bundleIdentifier": "com.veronikab.jartracker"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,11 +22,20 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.veronikab.mypantry"
+      "package": "com.veronikab.jartracker",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-camera", "expo-sqlite"]
+    "plugins": ["expo-camera", "expo-sqlite", "expo-font"],
+    "extra": {
+      "eas": {
+        "projectId": "0c1251aa-0631-4b0d-aa8e-3daa240e1045"
+      }
+    }
   }
 }

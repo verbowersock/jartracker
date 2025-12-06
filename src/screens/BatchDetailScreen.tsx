@@ -13,6 +13,7 @@ import {
   Dimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { FontAwesome6 } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
 import { getDb, markJarUsed, CATEGORIES } from "../db";
 import { theme } from "../theme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Route = RouteProp<RootStackParamList, "BatchDetail">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -90,6 +92,14 @@ export default function BatchDetailScreen() {
   const [jarSizeText, setJarSizeText] = React.useState("");
   const [locationText, setLocationText] = React.useState("");
   const [dateCannedText, setDateCannedText] = React.useState("");
+  const [shouldThrowError, setShouldThrowError] = React.useState(false);
+
+  // Simulate error for testing ErrorBoundary (dev only)
+  if (__DEV__ && shouldThrowError) {
+    throw new Error(
+      "Test error for ErrorBoundary simulation - this should be caught!"
+    );
+  }
 
   const loadData = React.useCallback(async () => {
     try {
@@ -110,7 +120,12 @@ export default function BatchDetailScreen() {
         "SELECT * FROM item_types WHERE id = ?",
         [itemTypeId]
       );
-      console.log("Item type data:", itemTypeData);
+      // Log item type data without the large base64 image
+      const { recipe_image, ...itemTypeDataForLog } = itemTypeData || {};
+      console.log("Item type data:", {
+        ...itemTypeDataForLog,
+        recipe_image: recipe_image ? "base64 image data present" : null,
+      });
       setItemType(itemTypeData);
 
       // Initialize editable text fields
@@ -185,14 +200,20 @@ export default function BatchDetailScreen() {
 
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setRecipeImage(result.assets[0].uri);
+        const imageUri = result.assets[0].uri;
+        // Convert to base64 for cross-device compatibility
+        const base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: "base64",
+        });
+        const base64Image = `data:image/jpeg;base64,${base64}`;
+        setRecipeImage(base64Image);
       }
     } catch (error) {
       console.error("Error picking image:", error);
@@ -222,7 +243,13 @@ export default function BatchDetailScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setRecipeImage(result.assets[0].uri);
+        const imageUri = result.assets[0].uri;
+        // Convert to base64 for cross-device compatibility
+        const base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: "base64",
+        });
+        const base64Image = `data:image/jpeg;base64,${base64}`;
+        setRecipeImage(base64Image);
       }
     } catch (error) {
       console.error("Error taking photo:", error);
@@ -305,8 +332,13 @@ export default function BatchDetailScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await markJarUsed(jarId);
-              await loadData();
+              const result = await markJarUsed(jarId);
+              if (result.success) {
+                await loadData();
+                Alert.alert("Success", result.message);
+              } else {
+                Alert.alert("Error", result.message);
+              }
             } catch (error) {
               console.error("Error marking jar as used:", error);
               Alert.alert(
@@ -340,13 +372,14 @@ export default function BatchDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView
         style={styles.modalContent}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
       >
         {/* Batch Name and Category */}
-        <View style={styles.modalSection}>
+        <View style={[styles.modalSection, styles.firstModalSection]}>
           <Text style={styles.modalBatchName}>{batchName}</Text>
           {itemType?.category && (
             <View
@@ -659,6 +692,20 @@ export default function BatchDetailScreen() {
             <Ionicons name="qr-code-outline" size={20} color="white" />
             <Text style={styles.modalActionButtonText}>Generate QR Labels</Text>
           </TouchableOpacity>
+          {/* 
+          {__DEV__ && (
+            <TouchableOpacity
+              style={[styles.modalActionButton, { backgroundColor: "#d32f2f" }]}
+              onPress={() => {
+                setShouldThrowError(true);
+              }}
+            >
+              <Ionicons name="bug-outline" size={20} color="white" />
+              <Text style={styles.modalActionButtonText}>
+                Simulate Error (Dev Only)
+              </Text>
+            </TouchableOpacity>
+          )} */}
 
           <TouchableOpacity
             style={[styles.modalActionButton, styles.modalSecondaryButton]}
@@ -762,8 +809,6 @@ export default function BatchDetailScreen() {
                 resizeMode="contain"
               />
             </TouchableOpacity>
-
-            {/* Close button */}
             <TouchableOpacity
               style={styles.fullscreenCloseButton}
               onPress={() => setIsImageModalVisible(false)}
@@ -773,7 +818,7 @@ export default function BatchDetailScreen() {
           </View>
         </Modal>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -786,75 +831,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.lg,
-  },
-  backButton: {
-    marginRight: theme.spacing.lg,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  title: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  categoryContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: theme.spacing.xs,
-  },
-  categoryIcon: {
-    fontSize: theme.fontSize.md,
-    marginRight: theme.spacing.sm,
-  },
-  categoryText: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-    fontWeight: theme.fontWeight.medium,
-  },
-  subtitle: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-  },
-  statsContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: "white",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  actionsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
+
   actionButton: {
     backgroundColor: theme.colors.primary,
     paddingVertical: theme.spacing.md,
@@ -951,41 +928,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
     fontSize: 16,
   },
-  recipeContainer: {
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: theme.spacing.lg,
-    marginVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  recipeTitle: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.sm,
-  },
-  recipeText: {
-    fontSize: theme.fontSize.md,
-    color: theme.colors.textSecondary,
-    lineHeight: 20,
-  },
-  notesContainer: {
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  notesTitle: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.sm,
-  },
+
   notesText: {
     fontSize: theme.fontSize.md,
     color: theme.colors.textSecondary,
@@ -994,10 +937,13 @@ const styles = StyleSheet.create({
   // Modal-style layout
   modalContent: {
     flex: 1,
+    paddingHorizontal: theme.spacing.xl,
   },
   modalSection: {
     marginVertical: theme.spacing.lg,
-    paddingHorizontal: theme.spacing.xl,
+  },
+  firstModalSection: {
+    marginTop: theme.spacing.md,
   },
   modalBatchName: {
     fontSize: theme.fontSize.xxl,

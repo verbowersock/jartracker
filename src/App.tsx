@@ -17,6 +17,7 @@ import QRLabelScreen from "./screens/QRLabelScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import BackupRestoreScreen from "./screens/BackupRestoreScreen";
 import StatisticsScreen from "./screens/StatisticsScreen";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { theme } from "./theme";
 
 export type RootStackParamList = {
@@ -85,51 +86,53 @@ export default function App() {
     ...DefaultTheme,
   };
   return (
-    <NavigationContainer theme={theme}>
-      <Stack.Navigator id={undefined}>
-        <Stack.Screen
-          name="Tabs"
-          component={Tabs}
-          options={({ route }) => ({
-            headerTitle: getFocusedRouteNameFromRoute(route) ?? "Home",
-          })}
-        />
-        <Stack.Screen
-          name="ItemTypeForm"
-          component={ItemTypeFormScreen}
-          options={{ title: "Item Type" }}
-        />
-        <Stack.Screen
-          name="ItemDetail"
-          component={ItemDetailScreen}
-          options={{ title: "Item Detail" }}
-        />
-        <Stack.Screen
-          name="BatchDetail"
-          component={BatchDetailScreen}
-          options={{ title: "Batch Details" }}
-        />
-        <Stack.Screen
-          name="AddBatch"
-          component={AddBatchScreen}
-          options={{ title: "Add Batch" }}
-        />
-        <Stack.Screen
-          name="QRLabel"
-          component={QRLabelScreen}
-          options={{ title: "QR Code Label" }}
-        />
-        <Stack.Screen
-          name="QRScanner"
-          component={QRScannerScreen}
-          options={{ title: "QR Scanner" }}
-        />
-        <Stack.Screen
-          name="BackupRestore"
-          component={BackupRestoreScreen}
-          options={{ title: "Backup & Restore" }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ErrorBoundary>
+      <NavigationContainer theme={theme}>
+        <Stack.Navigator id={undefined}>
+          <Stack.Screen
+            name="Tabs"
+            component={Tabs}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="ItemTypeForm"
+            component={ItemTypeFormScreen}
+            options={{ title: "Item Type" }}
+          />
+          <Stack.Screen
+            name="ItemDetail"
+            component={ItemDetailScreen}
+            options={{ title: "Item Detail" }}
+          />
+          <Stack.Screen
+            name="BatchDetail"
+            component={BatchDetailScreen}
+            options={{ title: "Batch Details" }}
+          />
+          <Stack.Screen
+            name="AddBatch"
+            component={AddBatchScreen}
+            options={{ title: "Add Batch" }}
+          />
+          <Stack.Screen
+            name="QRLabel"
+            component={QRLabelScreen}
+            options={{ title: "QR Code Label" }}
+          />
+          <Stack.Screen
+            name="QRScanner"
+            component={QRScannerScreen}
+            options={{ title: "QR Scanner" }}
+          />
+          <Stack.Screen
+            name="BackupRestore"
+            component={BackupRestoreScreen}
+            options={{ title: "Backup & Restore" }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ErrorBoundary>
   );
 }

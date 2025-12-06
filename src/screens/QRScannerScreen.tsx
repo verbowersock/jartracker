@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Alert } from "react-native";
 import { CameraView, Camera } from "expo-camera";
-import { markJarUsed, parseJarQrData } from "../db";
+import { markJarUsed, parseJarQrData, getJarById } from "../db";
 
 export default function QRScannerScreen() {
   const [hasPermission, setHasPermission] = React.useState<boolean | null>(
@@ -19,14 +19,94 @@ export default function QRScannerScreen() {
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
+
     const jarId = parseJarQrData(data);
-    if (jarId) {
-      await markJarUsed(jarId);
-      Alert.alert("Marked used", `Jar ${jarId} marked as used.`);
-    } else {
-      Alert.alert("Invalid QR", "This QR code is not a pantry jar label.");
+    if (!jarId) {
+      Alert.alert("Invalid QR Code", "This QR code is not a pantry jar label.");
+      setTimeout(() => setScanned(false), 2000);
+      return;
     }
-    setTimeout(() => setScanned(false), 800);
+
+    try {
+      // Get jar details first
+      const jar = await getJarById(jarId);
+      if (!jar) {
+        Alert.alert(
+          "Jar Not Found",
+          `Jar with ID ${jarId} was not found in your pantry.`
+        );
+        setTimeout(() => setScanned(false), 2000);
+        return;
+      }
+
+      // Check if already used
+      if (jar.used) {
+        Alert.alert(
+          "Already Used",
+          `This jar (ID: ${jarId}) has already been marked as used.`,
+          [
+            {
+              text: "OK",
+              onPress: () => setTimeout(() => setScanned(false), 500),
+            },
+          ]
+        );
+        return;
+      }
+
+      // Show confirmation dialog with delay
+      setTimeout(() => {
+        Alert.alert(
+          "Mark Jar as Used",
+          `Are you sure you want to mark jar ${jarId} as used?\n\nThis action cannot be undone.`,
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+              onPress: () => setTimeout(() => setScanned(false), 500),
+            },
+            {
+              text: "Mark Used",
+              style: "destructive",
+              onPress: async () => {
+                const result = await markJarUsed(jarId);
+                if (result.success) {
+                  Alert.alert(
+                    "Success",
+                    `Jar ${jarId} has been marked as used.`,
+                    [
+                      {
+                        text: "OK",
+                        onPress: () => setTimeout(() => setScanned(false), 500),
+                      },
+                    ]
+                  );
+                } else {
+                  Alert.alert("Error", result.message, [
+                    {
+                      text: "OK",
+                      onPress: () => setTimeout(() => setScanned(false), 500),
+                    },
+                  ]);
+                }
+              },
+            },
+          ]
+        );
+      }, 1000); // 1 second delay before showing confirmation
+    } catch (error) {
+      console.error("Error processing scanned jar:", error);
+      Alert.alert(
+        "Error",
+        "An error occurred while processing the jar. Please try again.",
+        [
+          {
+            text: "OK",
+            onPress: () => setTimeout(() => setScanned(false), 500),
+          },
+        ]
+      );
+    }
   };
 
   if (hasPermission === null) {

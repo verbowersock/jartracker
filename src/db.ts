@@ -30,15 +30,11 @@ export const CATEGORIES = [
 ];
 
 export const JAR_SIZES = [
-  "4 oz",
-  "8 oz",
-  "12 oz",
-  "16 oz",
-  "24 oz",
-  "32 oz",
-  "Quart",
-  "Half Gallon",
-  "Gallon",
+  "Half-pint (8 oz)",
+  "Pint (16 oz)",
+  "1.5 pint (24 oz)",
+  "Quart(32 oz)",
+  "Half-gallon (64 oz)",
 ];
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -48,14 +44,14 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
   try {
     // Use the sync method which is more reliable
-    db = SQLite.openDatabaseSync("mypantry.db");
+    db = SQLite.openDatabaseSync("jartracker.db");
     console.log("Database opened successfully");
   } catch (error) {
     console.error("Failed to open database:", error);
     // Try with a different database name as fallback
     console.log("Trying fallback database name...");
     try {
-      db = SQLite.openDatabaseSync("mypantry_backup.db");
+      db = SQLite.openDatabaseSync("jartracker_backup.db");
     } catch (fallbackError) {
       console.error("Fallback database also failed:", fallbackError);
       throw new Error("Cannot open any database");
@@ -240,9 +236,36 @@ export async function createMultipleJars(
   return { jarIds, batchId };
 }
 
-export async function markJarUsed(jarId: number): Promise<void> {
+export async function getJarById(jarId: number): Promise<Jar | null> {
   const database = await getDb();
+  return await database.getFirstAsync<Jar>("SELECT * FROM jars WHERE id = ?", [
+    jarId,
+  ]);
+}
+
+export async function markJarUsed(
+  jarId: number
+): Promise<{ success: boolean; message: string; jar?: Jar }> {
+  const database = await getDb();
+
+  // First check if jar exists and get its details
+  const jar = await getJarById(jarId);
+  if (!jar) {
+    return { success: false, message: "Jar not found" };
+  }
+
+  // Check if already used
+  if (jar.used) {
+    return {
+      success: false,
+      message: "This jar has already been marked as used",
+      jar,
+    };
+  }
+
+  // Mark as used
   await database.runAsync("UPDATE jars SET used = 1 WHERE id = ?", [jarId]);
+  return { success: true, message: "Jar marked as used successfully", jar };
 }
 
 export async function getJarsForItemType(itemTypeId: number): Promise<Jar[]> {
@@ -344,9 +367,11 @@ export async function getJarStats(): Promise<{
 export async function exportToJson(): Promise<string> {
   const database = await getDb();
   const itemTypes = await database.getAllAsync<ItemType>(
-    "SELECT * FROM item_types"
+    "SELECT id, name, category, recipe, notes, recipe_image FROM item_types"
   );
-  const jars = await database.getAllAsync<Jar>("SELECT * FROM jars");
+  const jars = await database.getAllAsync<Jar>(
+    "SELECT id, itemTypeId, fillDateISO, used, jarSize, location, batchId FROM jars"
+  );
   return JSON.stringify({ itemTypes, jars }, null, 2);
 }
 
@@ -360,11 +385,13 @@ export async function importFromJson(json: string): Promise<void> {
     await database.execAsync("DELETE FROM jars; DELETE FROM item_types;");
     for (const it of payload.itemTypes) {
       const res = await database.runAsync(
-        "INSERT INTO item_types (id, name, recipe, notes) VALUES (?, ?, ?, ?)",
+        "INSERT INTO item_types (id, name, category, recipe, notes, recipe_image) VALUES (?, ?, ?, ?, ?, ?)",
         it.id ?? null,
         it.name,
+        it.category ?? null,
         it.recipe ?? null,
-        it.notes ?? null
+        it.notes ?? null,
+        it.recipe_image ?? null
       );
       // preserve ids
       if (!it.id) {
@@ -377,11 +404,14 @@ export async function importFromJson(json: string): Promise<void> {
     }
     for (const j of payload.jars) {
       await database.runAsync(
-        "INSERT INTO jars (id, itemTypeId, fillDateISO, used) VALUES (?, ?, ?, ?)",
+        "INSERT INTO jars (id, itemTypeId, fillDateISO, used, jarSize, location, batchId) VALUES (?, ?, ?, ?, ?, ?, ?)",
         j.id ?? null,
         j.itemTypeId,
         j.fillDateISO,
-        j.used ?? 0
+        j.used ?? 0,
+        j.jarSize ?? null,
+        j.location ?? null,
+        j.batchId ?? null
       );
     }
     await database.execAsync("COMMIT");
@@ -392,13 +422,13 @@ export async function importFromJson(json: string): Promise<void> {
 }
 
 export function buildJarQrData(jarId: number): string {
-  return JSON.stringify({ type: "mypantry-jar", id: jarId });
+  return JSON.stringify({ type: "jartracker-jar", id: jarId });
 }
 
 export function parseJarQrData(data: string): number | null {
   try {
     const obj = JSON.parse(data);
-    if (obj && obj.type === "mypantry-jar" && typeof obj.id === "number")
+    if (obj && obj.type === "jartracker-jar" && typeof obj.id === "number")
       return obj.id;
     return null;
   } catch {
