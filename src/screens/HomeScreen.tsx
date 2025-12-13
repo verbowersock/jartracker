@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +15,7 @@ import { getAllBatches, getJarStats, CATEGORIES } from "../db";
 import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -159,7 +159,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <StatusBar
         barStyle="dark-content"
         backgroundColor={theme.colors.background}
@@ -328,7 +328,7 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -342,6 +342,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...theme.typography.headingTitle,
+    paddingVertical: theme.spacing.xl,
   },
   addButton: {
     backgroundColor: theme.colors.primary,

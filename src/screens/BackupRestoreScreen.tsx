@@ -5,6 +5,7 @@ import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
 import { exportToJson, importFromJson } from "../db";
 import { theme } from "../theme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function BackupRestoreScreen() {
   const onBackup = async () => {
@@ -77,7 +78,7 @@ export default function BackupRestoreScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.section}>
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Backup and restore</Text>
@@ -104,7 +105,7 @@ export default function BackupRestoreScreen() {
           Choose a backup file to restore your data
         </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

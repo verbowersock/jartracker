@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { getDb, CATEGORIES } from "../db";
 import { theme } from "../theme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type YearlyStats = {
   year: number;
@@ -83,7 +84,7 @@ export default function StatisticsScreen() {
       // Load yearly statistics
       const yearlyData = await db.getAllAsync<YearlyStats>(`
         SELECT 
-          strftime('%Y', j.fillDateISO) as year,
+          CAST(strftime('%Y', j.fillDateISO) as INTEGER) as year,
           COUNT(*) as totalCanned,
           SUM(j.used) as totalUsed,
           COUNT(*) - SUM(j.used) as available
@@ -91,6 +92,8 @@ export default function StatisticsScreen() {
         GROUP BY strftime('%Y', j.fillDateISO)
         ORDER BY year DESC
       `);
+
+      console.log("Raw yearly data from DB:", yearlyData);
 
       // Ensure current year is always available for selection even with no data
       const currentYear = new Date().getFullYear();
@@ -107,6 +110,7 @@ export default function StatisticsScreen() {
         });
       }
 
+      console.log("Final yearly data:", yearlyData);
       setYearlyStats(yearlyData);
 
       // Load category statistics
@@ -242,7 +246,7 @@ export default function StatisticsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -264,9 +268,9 @@ export default function StatisticsScreen() {
             <View style={styles.yearSelector}>
               {yearlyStats
                 .sort((a, b) => b.year - a.year) // Ensure proper sorting with current year first
-                .map((yearStat) => (
+                .map((yearStat, index) => (
                   <TouchableOpacity
-                    key={yearStat.year}
+                    key={`selector-${yearStat.year}-${index}`}
                     style={[
                       styles.yearButton,
                       selectedYear === yearStat.year && styles.yearButtonActive,
@@ -522,12 +526,15 @@ export default function StatisticsScreen() {
               <Text style={styles.emptyText}>No stats to show</Text>
             </View>
           ) : (
-            yearlyStats.map((year) => {
+            yearlyStats.map((year, index) => {
               const yearUsageRate = Math.round(
                 (year.totalUsed / year.totalCanned) * 100
               );
               return (
-                <View key={year.year} style={styles.yearComparisonRow}>
+                <View
+                  key={`comparison-${year.year}-${index}`}
+                  style={styles.yearComparisonRow}
+                >
                   <Text style={styles.yearComparisonYear}>{year.year}</Text>
                   <View style={styles.yearComparisonStats}>
                     <Text style={styles.yearComparisonStat}>
@@ -546,7 +553,7 @@ export default function StatisticsScreen() {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

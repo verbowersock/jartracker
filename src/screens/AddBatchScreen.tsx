@@ -10,10 +10,12 @@ import {
   FlatList,
   Modal,
   ScrollView,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
 import {
@@ -37,9 +39,8 @@ export default function AddBatchScreen() {
   const [recipe, setRecipe] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [quantity, setQuantity] = React.useState("1");
-  const [fillDate, setFillDate] = React.useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [fillDate, setFillDate] = React.useState(new Date());
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [category, setCategory] = React.useState("");
   const [jarSize, setJarSize] = React.useState("");
   const [location, setLocation] = React.useState("");
@@ -101,8 +102,24 @@ export default function AddBatchScreen() {
     }
 
     // Validate date
-    if (!fillDate) {
-      Alert.alert("Date Required", "Please select a fill date");
+    if (!fillDate || isNaN(fillDate.getTime())) {
+      Alert.alert("Date Required", "Please select a valid fill date");
+      return;
+    }
+
+    // Check if date is not in the future
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Set to end of today
+    if (fillDate > today) {
+      Alert.alert("Future Date", "Fill date cannot be in the future");
+      return;
+    }
+
+    // Check if date is not too far in the past (optional - adjust as needed)
+    const tenYearsAgo = new Date();
+    tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+    if (fillDate < tenYearsAgo) {
+      Alert.alert("Date Too Old", "Fill date cannot be more than 10 years ago");
       return;
     }
 
@@ -151,9 +168,11 @@ export default function AddBatchScreen() {
     }
 
     // Create multiple jars with jar size and location
+    const isoDate = fillDate.toISOString();
+
     const { jarIds, batchId } = await createMultipleJars(
       itemTypeId,
-      fillDate + "T12:00:00.000Z",
+      isoDate,
       qty,
       jarSize,
       location.trim() || undefined
@@ -291,12 +310,37 @@ export default function AddBatchScreen() {
 
       {/* Fill Date */}
       <Text style={styles.label}>Fill Date</Text>
-      <TextInput
-        style={styles.input}
-        value={fillDate}
-        onChangeText={setFillDate}
-        placeholder="YYYY-MM-DD"
-      />
+      <TouchableOpacity
+        style={styles.dateButton}
+        onPress={() => setShowDatePicker(true)}
+      >
+        <Text style={styles.dateButtonText}>
+          {fillDate.toLocaleDateString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            year: "numeric",
+          })}
+        </Text>
+        <Ionicons
+          name="calendar-outline"
+          size={20}
+          color={theme.colors.textSecondary}
+        />
+      </TouchableOpacity>
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={fillDate}
+          mode="date"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(Platform.OS === "ios");
+            if (selectedDate) {
+              setFillDate(selectedDate);
+            }
+          }}
+        />
+      )}
 
       {/* Location */}
       <Text style={styles.label}>Location (Optional)</Text>
@@ -530,6 +574,20 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     fontSize: theme.fontSize.md,
     backgroundColor: theme.colors.surface,
+  },
+  dateButton: {
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dateButtonText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
   },
   selectInput: {
     justifyContent: "center",

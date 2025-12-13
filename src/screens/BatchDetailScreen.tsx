@@ -11,7 +11,9 @@ import {
   Image,
   Modal,
   Dimensions,
+  Platform,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
@@ -19,7 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { FontAwesome6 } from "@expo/vector-icons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
-import { getDb, markJarUsed, CATEGORIES } from "../db";
+import { getDb, markJarUsed, CATEGORIES, JAR_SIZES } from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -92,6 +94,9 @@ export default function BatchDetailScreen() {
   const [jarSizeText, setJarSizeText] = React.useState("");
   const [locationText, setLocationText] = React.useState("");
   const [dateCannedText, setDateCannedText] = React.useState("");
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const [fillDateObject, setFillDateObject] = React.useState(new Date());
+  const [showJarSizeModal, setShowJarSizeModal] = React.useState(false);
   const [shouldThrowError, setShouldThrowError] = React.useState(false);
 
   // Simulate error for testing ErrorBoundary (dev only)
@@ -153,6 +158,12 @@ export default function BatchDetailScreen() {
         ? batchJars[0].fillDateISO.split("T")[0]
         : fillDate.split("T")[0];
       setDateCannedText(dateForEdit);
+
+      // Initialize date object for picker
+      const dateObj = new Date(dateForEdit);
+      if (!isNaN(dateObj.getTime())) {
+        setFillDateObject(dateObj);
+      }
     } catch (error) {
       console.error("Error loading batch data:", error);
       Alert.alert("Error", `Failed to load batch data: ${error.message}`);
@@ -372,7 +383,7 @@ export default function BatchDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <ScrollView
         style={styles.modalContent}
         showsVerticalScrollIndicator={false}
@@ -426,12 +437,26 @@ export default function BatchDetailScreen() {
             </View>
             <Text style={styles.modalDetailLabel}>Jar Size:</Text>
             {isEditingDetails ? (
-              <TextInput
-                style={styles.detailInput}
-                value={jarSizeText}
-                onChangeText={setJarSizeText}
-                placeholder="e.g., 16 oz, Quart"
-              />
+              <TouchableOpacity
+                style={[styles.detailInput, styles.selectInput]}
+                onPress={() => setShowJarSizeModal(true)}
+              >
+                <View style={styles.selectContent}>
+                  <Text
+                    style={[
+                      styles.dateButtonText,
+                      !jarSizeText && { color: theme.colors.textLight },
+                    ]}
+                  >
+                    {jarSizeText || "Select jar size..."}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                </View>
+              </TouchableOpacity>
             ) : (
               <Text style={styles.modalDetailValue}>
                 {jarSizeText || "Not specified"}
@@ -446,12 +471,43 @@ export default function BatchDetailScreen() {
             </View>
             <Text style={styles.modalDetailLabel}>Date Canned:</Text>
             {isEditingDetails ? (
-              <TextInput
-                style={styles.detailInput}
-                value={dateCannedText}
-                onChangeText={setDateCannedText}
-                placeholder="YYYY-MM-DD"
-              />
+              <>
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={styles.dateButtonText}>
+                    {fillDateObject.toLocaleDateString("en-US", {
+                      month: "2-digit",
+                      day: "2-digit",
+                      year: "numeric",
+                    })}
+                  </Text>
+                  <Ionicons
+                    name="calendar-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={fillDateObject}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    accentColor={theme.colors.primary}
+                    onChange={(event, selectedDate) => {
+                      setShowDatePicker(Platform.OS === "ios");
+                      if (selectedDate) {
+                        setFillDateObject(selectedDate);
+                        const formattedDate = selectedDate
+                          .toISOString()
+                          .split("T")[0];
+                        setDateCannedText(formattedDate);
+                      }
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <Text style={styles.modalDetailValue}>
                 {new Date(
@@ -818,6 +874,45 @@ export default function BatchDetailScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Jar Size Selection Modal */}
+      <Modal
+        visible={showJarSizeModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowJarSizeModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowJarSizeModal(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel jar size selection"
+            >
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Jar Size</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <FlatList
+            data={JAR_SIZES}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.itemTypeRow}
+                onPress={() => {
+                  setJarSizeText(item);
+                  setShowJarSizeModal(false);
+                }}
+              >
+                <Text style={styles.itemTypeName}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1085,6 +1180,23 @@ const styles = StyleSheet.create({
     height: 40, // Fixed height to match the text values
     marginLeft: theme.spacing.xs, // Match the value margin for alignment
   },
+  dateButton: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.sm,
+    height: 40,
+    marginLeft: theme.spacing.xs,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dateButtonText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+  },
   expandButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1148,5 +1260,44 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 10,
     zIndex: 1,
+  },
+  selectInput: {
+    justifyContent: "center",
+  },
+  selectContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+  },
+  modalTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+  },
+  modalCancel: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  itemTypeRow: {
+    padding: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  itemTypeName: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
   },
 });

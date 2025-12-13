@@ -84,7 +84,6 @@ export const theme = {
       justifyContent: "space-between" as const,
       alignItems: "center" as const,
       paddingHorizontal: 20,
-      paddingTop: 24,
     },
   },
 };

@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.veronikab.jartracker"
@@ -19,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#5d7a5d"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.veronikab.jartracker",
@@ -31,11 +26,24 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-camera", "expo-sqlite", "expo-font"],
+    "plugins": [
+      "expo-camera",
+      "expo-sqlite",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#5d7a5d",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ]
+    ],
     "extra": {
       "eas": {
-        "projectId": "0c1251aa-0631-4b0d-aa8e-3daa240e1045"
+        "projectId": "b3d397f6-1608-4443-91e2-403258b6fb1c"
       }
-    }
+    },
+    "owner": "veronikab"
   }
 }
