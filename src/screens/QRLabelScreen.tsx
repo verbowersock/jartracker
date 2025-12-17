@@ -124,14 +124,14 @@ export default function QRLabelScreen({
   const generateHTMLForPDF = async (jarIds: number[]): Promise<string> => {
     const sheets: string[] = [];
 
-    // Process jars in groups of 12 (4x3 grid)
-    for (let i = 0; i < jarIds.length; i += 12) {
-      const sheetJars = jarIds.slice(i, i + 12);
+    // Process jars in groups of 24 (4x6 grid)
+    for (let i = 0; i < jarIds.length; i += 24) {
+      const sheetJars = jarIds.slice(i, i + 24);
 
       let labelsHTML = "";
 
-      // Generate 12 labels per sheet
-      for (let j = 0; j < 12; j++) {
+      // Generate 24 labels per sheet
+      for (let j = 0; j < 24; j++) {
         const currentJarId = sheetJars[j];
         if (currentJarId) {
           // Generate QR code data
@@ -170,8 +170,6 @@ export default function QRLabelScreen({
               </div>
             `;
           }
-        } else {
-          labelsHTML += `<div class="label empty"></div>`;
         }
       }
 
@@ -193,7 +191,7 @@ export default function QRLabelScreen({
         <style>
           @page {
             size: 8.5in 11in;
-            margin: 0.25in;
+            margin: 0.5in 0.75in;
           }
           
           body {
@@ -203,9 +201,11 @@ export default function QRLabelScreen({
           }
           
           .sheet {
-            width: 8in;
-            height: 10.5in;
+            width: 7in;
+            height: 10in;
             page-break-after: always;
+            padding: 0;
+            box-sizing: border-box;
           }
           
           .sheet:last-child {
@@ -214,9 +214,10 @@ export default function QRLabelScreen({
           
           .label-grid {
             display: grid;
-            grid-template-columns: repeat(3, 2in);
-            grid-template-rows: repeat(4, 2in);
-            gap: 0.25in;
+            grid-template-columns: repeat(4, 1.5in);
+            grid-template-rows: repeat(6, 1.5in);
+            column-gap: 0.3125in;
+            row-gap: 0.1875in;
             width: 100%;
             height: 100%;
             justify-content: center;
@@ -224,8 +225,8 @@ export default function QRLabelScreen({
           }
           
           .label {
-            width: 2in;
-            height: 2in;
+            width: 1.5in;
+            height: 1.5in;
             border: 2px solid #000;
             display: flex;
             flex-direction: column;
@@ -236,10 +237,7 @@ export default function QRLabelScreen({
             background: white;
           }
           
-          .label.empty {
-            border: 1px dashed #ddd;
-            background: #f9f9f9;
-          }
+
           
           .label-title {
             font-size: 12px;
@@ -258,8 +256,8 @@ export default function QRLabelScreen({
           }
           
           .qr-image {
-            width: 110px;
-            height: 110px;
+            width: 80px;
+            height: 80px;
             display: block;
           }
           
@@ -269,8 +267,8 @@ export default function QRLabelScreen({
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            width: 110px;
-            height: 110px;
+            width: 80px;
+            height: 80px;
             border: 2px solid #333;
             position: relative;
           }
@@ -349,7 +347,7 @@ export default function QRLabelScreen({
         </Text>
 
         <Text style={styles.description}>
-          Generate printable labels (2" × 2") - 12 per sheet
+          Generate printable labels (1.5" × 1.5") - 24 per sheet
         </Text>
 
         <TouchableOpacity
@@ -366,15 +364,15 @@ export default function QRLabelScreen({
         </TouchableOpacity>
 
         <Text style={styles.info}>
-          {Math.ceil(allJarIds.length / 12)} sheet
-          {Math.ceil(allJarIds.length / 12) !== 1 ? "s" : ""} will be generated
+          {Math.ceil(allJarIds.length / 24)} sheet
+          {Math.ceil(allJarIds.length / 24) !== 1 ? "s" : ""} will be generated
         </Text>
       </View>
 
       <View style={styles.previewContainer}>
-        <Text style={styles.previewTitle}>Preview (3×4 grid per sheet):</Text>
+        <Text style={styles.previewTitle}>Preview (4×6 grid per sheet):</Text>
         <View style={styles.gridPreview}>
-          {allJarIds.slice(0, 12).map((jarId, index) => (
+          {allJarIds.slice(0, 24).map((jarId, index) => (
             <View key={jarId} style={styles.miniLabel}>
               <Text style={styles.miniLabelText}>{name}</Text>
               <View style={styles.miniQRPlaceholder}>
@@ -383,16 +381,6 @@ export default function QRLabelScreen({
               <Text style={styles.miniLabelId}>ID: {jarId}</Text>
             </View>
           ))}
-          {/* Fill remaining spots */}
-          {Array.from(
-            { length: Math.max(0, 12 - Math.min(allJarIds.length, 12)) },
-            (_, i) => (
-              <View
-                key={`empty-${i}`}
-                style={[styles.miniLabel, styles.miniLabelEmpty]}
-              />
-            )
-          )}
         </View>
       </View>
     </View>
@@ -497,10 +485,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "white",
   },
-  miniLabelEmpty: {
-    backgroundColor: "#f9f9f9",
-    borderStyle: "dashed",
-  },
+
   miniLabelText: {
     fontSize: 8,
     fontWeight: "600",

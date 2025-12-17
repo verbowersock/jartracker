@@ -128,6 +128,15 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     console.log("Database migration info:", error);
   }
 
+  // Seed development data if in dev mode
+  if (__DEV__) {
+    try {
+      await seedDevelopmentData();
+    } catch (error) {
+      console.error("Error seeding development data:", error);
+    }
+  }
+
   return db;
 }
 
@@ -433,5 +442,129 @@ export function parseJarQrData(data: string): number | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+export async function seedDevelopmentData(): Promise<void> {
+  if (!__DEV__) return;
+
+  const db = await getDb();
+
+  // Check if data already exists
+  const existingData = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM item_types"
+  );
+
+  if (existingData && existingData.count > 0) {
+    console.log("Development data already exists, skipping seed");
+    return;
+  }
+
+  console.log("Seeding development data...");
+
+  const testItemTypes = [
+    {
+      name: "Strawberry Jam",
+      category: "preserves",
+      recipe: "Fresh strawberries with sugar and lemon",
+    },
+    {
+      name: "Tomato Sauce",
+      category: "sauces",
+      recipe: "San Marzano tomatoes, basil, garlic",
+    },
+    {
+      name: "Dill Pickles",
+      category: "pickles",
+      recipe: "Cucumbers in vinegar brine with dill",
+    },
+    {
+      name: "Apple Butter",
+      category: "preserves",
+      recipe: "Slow-cooked apples with cinnamon",
+    },
+    {
+      name: "Green Beans",
+      category: "vegetables",
+      recipe: "Fresh green beans pressure canned",
+    },
+    {
+      name: "Peach Preserves",
+      category: "fruits",
+      recipe: "Ripe peaches with sugar",
+    },
+    {
+      name: "Marinara Sauce",
+      category: "sauces",
+      recipe: "Roma tomatoes, herbs, onions",
+    },
+    {
+      name: "Corn Relish",
+      category: "vegetables",
+      recipe: "Sweet corn with peppers and onions",
+    },
+  ];
+
+  const generateRandomDate = (year: number, month: number) => {
+    const day = Math.floor(Math.random() * 28) + 1;
+    return new Date(year, month - 1, day).toISOString();
+  };
+
+  try {
+    for (const itemType of testItemTypes) {
+      const result = await db.runAsync(
+        "INSERT INTO item_types (name, category, recipe) VALUES (?, ?, ?)",
+        [itemType.name, itemType.category, itemType.recipe]
+      );
+
+      const itemTypeId = result.lastInsertRowId;
+
+      // Generate 2-4 batches per item type
+      const batchCount = Math.floor(Math.random() * 3) + 2;
+
+      for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+        // Spread across 2023, 2024, and 2025
+        const year = 2023 + Math.floor(Math.random() * 3);
+        const month = Math.floor(Math.random() * 12) + 1;
+        const fillDate = generateRandomDate(year, month);
+
+        // Generate unique batch ID
+        const batchId = `batch-${itemTypeId}-${batchIndex}-${year}${month
+          .toString()
+          .padStart(2, "0")}`;
+
+        // Random jar sizes (consistent within batch)
+        const jarSizes = ["8 oz", "16 oz", "Pint", "Quart", "Half Pint"];
+        const jarSize = jarSizes[Math.floor(Math.random() * jarSizes.length)];
+
+        // Random locations (consistent within batch)
+        const locations = [
+          "Pantry Shelf A",
+          "Basement Storage",
+          "Kitchen Cabinet",
+          "Garage Shelf",
+          "Cold Room",
+        ];
+        const location =
+          locations[Math.floor(Math.random() * locations.length)];
+
+        // Generate 2-6 jars per batch
+        const jarsPerBatch = Math.floor(Math.random() * 5) + 2;
+
+        for (let jarIndex = 0; jarIndex < jarsPerBatch; jarIndex++) {
+          // 30% chance of being used
+          const used = Math.random() < 0.3 ? 1 : 0;
+
+          await db.runAsync(
+            "INSERT INTO jars (itemTypeId, fillDateISO, jarSize, location, used, batchId) VALUES (?, ?, ?, ?, ?, ?)",
+            [itemTypeId, fillDate, jarSize, location, used, batchId]
+          );
+        }
+      }
+    }
+
+    console.log("Development data seeded successfully");
+  } catch (error) {
+    console.error("Error seeding development data:", error);
   }
 }
