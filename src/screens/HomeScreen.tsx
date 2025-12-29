@@ -7,11 +7,12 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
-import { getAllBatches, getJarStats, CATEGORIES } from "../db";
+import { getAllBatches, getJarStats, CATEGORIES, getDb } from "../db";
 import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -45,9 +46,13 @@ export default function HomeScreen() {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] =
     React.useState<CategoryFilter>("all");
+  const [isInitializing, setIsInitializing] = React.useState(true);
 
   const loadData = async () => {
     try {
+      // Ensure DB is initialized first (this includes seeding)
+      await getDb();
+
       const [batchData, statsData] = await Promise.all([
         getAllBatches(),
         getJarStats(),
@@ -56,6 +61,8 @@ export default function HomeScreen() {
       setStats(statsData);
     } catch (error) {
       console.error("Error loading data:", error);
+    } finally {
+      setIsInitializing(false);
     }
   };
 
@@ -94,7 +101,7 @@ export default function HomeScreen() {
         // Navigate to the dedicated BatchDetailScreen
         navigation.navigate("BatchDetail", {
           batchName: item.name,
-          itemTypeId: item.id, // Using batch id as itemTypeId for now
+          itemTypeId: item.id,
           fillDate: item.fillDate,
           batchId: item.batchId,
         });
@@ -157,6 +164,18 @@ export default function HomeScreen() {
       theme.categoryColors.other
     );
   };
+
+  // Show loading spinner while initializing database
+  if (isInitializing) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.loadingText}>Loading pantry...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -336,6 +355,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: theme.spacing.md,
+  },
+  loadingText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.sm,
   },
   header: {
     ...theme.typography.headerContainer,
