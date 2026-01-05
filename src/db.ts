@@ -26,15 +26,23 @@ export const CATEGORIES = [
   { id: "pickles", name: "Pickles", icon: "🥒" },
   { id: "sauces", name: "Sauces", icon: "🍅" },
   { id: "meats", name: "Meats", icon: "🥩" },
+  { id: "juices", name: "Juices", icon: "🧃" },
+  { id: "meals", name: "Meals", icon: "🍲" },
   { id: "other", name: "Other", icon: "📦" },
 ];
 
 export const JAR_SIZES = [
+  "Quarter-pint (4 oz)",
   "Half-pint (8 oz)",
   "Pint (16 oz)",
   "1.5 pint (24 oz)",
-  "Quart(32 oz)",
+  "Quart (32 oz)",
   "Half-gallon (64 oz)",
+  "Gallon (128 oz)",
+  "Quarter-liter (250 ml)",
+  "Half-liter (500 ml)",
+  "Liter (1000 ml)",
+  "Three Liter (3000 ml)",
 ];
 
 let db: SQLite.SQLiteDatabase | null = null;

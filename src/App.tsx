@@ -17,6 +17,7 @@ import QRLabelScreen from "./screens/QRLabelScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import BackupRestoreScreen from "./screens/BackupRestoreScreen";
 import StatisticsScreen from "./screens/StatisticsScreen";
+import AboutScreen from "./screens/AboutScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { theme } from "./theme";
 
@@ -41,6 +42,7 @@ export type TabParamList = {
   Statistics: undefined;
   Backup: undefined;
   Scan: undefined;
+  About: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -63,6 +65,10 @@ function Tabs() {
             iconName = focused ? "cloud-download" : "cloud-download-outline";
           } else if (route.name === "Scan") {
             iconName = focused ? "qr-code" : "qr-code-outline";
+          } else if (route.name === "About") {
+            iconName = focused
+              ? "information-circle"
+              : "information-circle-outline";
           } else {
             iconName = "ellipse";
           }
@@ -77,6 +83,7 @@ function Tabs() {
       <Tab.Screen name="Statistics" component={StatisticsScreen} />
       <Tab.Screen name="Backup" component={BackupRestoreScreen} />
       <Tab.Screen name="Scan" component={QRScannerScreen} />
+      <Tab.Screen name="About" component={AboutScreen} />
     </Tab.Navigator>
   );
 }

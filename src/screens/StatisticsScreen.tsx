@@ -27,6 +27,7 @@ type CategoryStats = {
   totalCanned: number;
   totalUsed: number;
   available: number;
+  sizeCounts?: { [jarSize: string]: number };
 };
 
 type ItemTypeStats = {
@@ -36,6 +37,7 @@ type ItemTypeStats = {
   totalCanned: number;
   totalUsed: number;
   available: number;
+  sizeCounts?: { [jarSize: string]: number };
 };
 
 type MonthlyStats = {
@@ -62,6 +64,31 @@ const getCategoryColor = (categoryId: string) => {
   );
 };
 
+const formatJarSizes = (
+  sizeCounts?: { [jarSize: string]: number },
+  detailed: boolean = false
+) => {
+  if (!sizeCounts || Object.keys(sizeCounts).length === 0) {
+    return null;
+  }
+
+  const sortedSizes = Object.entries(sizeCounts).sort(([, a], [, b]) => b - a); // Sort by count, descending
+
+  if (!detailed) {
+    // Compact view - just show if there are sizes
+    const totalJars = sortedSizes.reduce((sum, [, count]) => sum + count, 0);
+    return `${totalJars} jars`;
+  }
+
+  // Detailed view when revealed
+  return sortedSizes
+    .map(([size, count]) => {
+      const cleanSize = size === "Unknown" ? "Unknown size" : size;
+      return `${cleanSize}: ${count}`;
+    })
+    .join("\n");
+};
+
 export default function StatisticsScreen() {
   const [yearlyStats, setYearlyStats] = React.useState<YearlyStats[]>([]);
   const [categoryStats, setCategoryStats] = React.useState<CategoryStats[]>([]);
@@ -69,6 +96,9 @@ export default function StatisticsScreen() {
   const [expandedCategories, setExpandedCategories] = React.useState<
     Set<string>
   >(new Set());
+  const [expandedItemTypes, setExpandedItemTypes] = React.useState<Set<number>>(
+    new Set()
+  );
   const [monthlyStats, setMonthlyStats] = React.useState<MonthlyStats[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -134,6 +164,32 @@ export default function StatisticsScreen() {
         ...stat,
         categoryName: getCategoryName(stat.category),
       }));
+
+      // Load jar size breakdown for each category
+      for (const category of categoryStatsWithNames) {
+        const sizeData = await db.getAllAsync<{
+          jarSize: string;
+          count: number;
+        }>(
+          `
+          SELECT 
+            COALESCE(j.jarSize, 'Unknown') as jarSize,
+            COUNT(*) as count
+          FROM jars j
+          LEFT JOIN item_types it ON j.itemTypeId = it.id
+          WHERE COALESCE(it.category, 'other') = ? AND strftime('%Y', j.fillDateISO) = ?
+          GROUP BY j.jarSize
+          ORDER BY count DESC
+        `,
+          [category.category, selectedYear.toString()]
+        );
+
+        category.sizeCounts = {};
+        sizeData.forEach((row) => {
+          category.sizeCounts![row.jarSize] = row.count;
+        });
+      }
+
       setCategoryStats(categoryStatsWithNames);
 
       // Load item type statistics for selected year
@@ -154,6 +210,31 @@ export default function StatisticsScreen() {
       `,
         [selectedYear.toString()]
       );
+
+      // Load jar size breakdown for each item type
+      for (const itemType of itemTypeData) {
+        const sizeData = await db.getAllAsync<{
+          jarSize: string;
+          count: number;
+        }>(
+          `
+          SELECT 
+            COALESCE(j.jarSize, 'Unknown') as jarSize,
+            COUNT(*) as count
+          FROM jars j
+          WHERE j.itemTypeId = ? AND strftime('%Y', j.fillDateISO) = ?
+          GROUP BY j.jarSize
+          ORDER BY count DESC
+        `,
+          [itemType.id, selectedYear.toString()]
+        );
+
+        itemType.sizeCounts = {};
+        sizeData.forEach((row) => {
+          itemType.sizeCounts![row.jarSize] = row.count;
+        });
+      }
+
       setItemTypeStats(itemTypeData);
 
       // Load monthly statistics for selected year
@@ -205,7 +286,7 @@ export default function StatisticsScreen() {
       )
     : 0;
 
-  const toggleCategory = (category: string) => {
+  const toggleCategory = async (category: string) => {
     const newExpanded = new Set(expandedCategories);
     if (newExpanded.has(category)) {
       newExpanded.delete(category);
@@ -213,6 +294,18 @@ export default function StatisticsScreen() {
       newExpanded.add(category);
     }
     setExpandedCategories(newExpanded);
+  };
+
+  const toggleItemType = async (itemTypeId: number) => {
+    setExpandedItemTypes((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemTypeId)) {
+        newSet.delete(itemTypeId);
+      } else {
+        newSet.add(itemTypeId);
+      }
+      return newSet;
+    });
   };
 
   const getItemTypesForCategory = (category: string) => {
@@ -349,6 +442,16 @@ export default function StatisticsScreen() {
                     style={styles.categoryRow}
                     onPress={() => toggleCategory(category.category)}
                   >
+                    <Ionicons
+                      name={
+                        isExpanded
+                          ? "chevron-up-outline"
+                          : "chevron-down-outline"
+                      }
+                      size={20}
+                      color={theme.colors.textSecondary}
+                      style={styles.expandIcon}
+                    />
                     <View style={styles.categoryInfo}>
                       <Text style={styles.categoryIcon}>
                         {getCategoryIcon(category.category)}
@@ -387,16 +490,6 @@ export default function StatisticsScreen() {
 
                         <Text style={styles.categoryStatLabel}>Available</Text>
                       </View>
-                      <Ionicons
-                        name={
-                          isExpanded
-                            ? "chevron-up-outline"
-                            : "chevron-down-outline"
-                        }
-                        size={20}
-                        color={theme.colors.textSecondary}
-                        style={styles.expandIcon}
-                      />
                     </View>
                   </TouchableOpacity>
 
@@ -404,53 +497,104 @@ export default function StatisticsScreen() {
                   {isExpanded && itemTypes.length > 0 && (
                     <View style={styles.itemTypesContainer}>
                       {itemTypes.map((itemType, index) => (
-                        <View
-                          key={itemType.id}
-                          style={[
-                            styles.itemTypeRow,
-                            index === itemTypes.length - 1 && {
-                              borderBottomWidth: 0,
-                            },
-                          ]}
-                        >
-                          <Text style={styles.itemTypeName}>
-                            {itemType.name}
-                          </Text>
-                          <View style={styles.itemTypeStats}>
-                            <View style={styles.itemTypeStat}>
-                              <Text style={styles.itemTypeStatNumber}>
-                                {itemType.totalCanned}
-                              </Text>
-                              <Text style={styles.itemTypeStatLabel}>
-                                Canned
-                              </Text>
+                        <React.Fragment key={itemType.id}>
+                          <TouchableOpacity
+                            style={[
+                              styles.itemTypeRow,
+                              index === itemTypes.length - 1 && {
+                                borderBottomWidth: 0,
+                              },
+                            ]}
+                            onPress={() => toggleItemType(itemType.id)}
+                          >
+                            <View style={styles.itemTypeNameContainer}>
+                              <Ionicons
+                                name={
+                                  expandedItemTypes.has(itemType.id)
+                                    ? "chevron-up-outline"
+                                    : "chevron-down-outline"
+                                }
+                                size={16}
+                                color={theme.colors.textSecondary}
+                                style={{ marginRight: theme.spacing.sm }}
+                              />
+
+                              <View style={styles.itemTypeNameRow}>
+                                <Text style={styles.itemTypeName}>
+                                  {itemType.name}
+                                </Text>
+                              </View>
                             </View>
-                            <View style={styles.itemTypeStat}>
-                              <Text
-                                style={[
-                                  styles.itemTypeStatNumber,
-                                  { color: "#d32f2f" },
-                                ]}
-                              >
-                                {itemType.totalUsed}
-                              </Text>
-                              <Text style={styles.itemTypeStatLabel}>Used</Text>
+                            <View style={styles.itemTypeStats}>
+                              <View style={styles.itemTypeStat}>
+                                <Text style={styles.itemTypeStatNumber}>
+                                  {itemType.totalCanned}
+                                </Text>
+                                <Text style={styles.itemTypeStatLabel}>
+                                  Canned
+                                </Text>
+                              </View>
+                              <View style={styles.itemTypeStat}>
+                                <Text
+                                  style={[
+                                    styles.itemTypeStatNumber,
+                                    { color: "#d32f2f" },
+                                  ]}
+                                >
+                                  {itemType.totalUsed}
+                                </Text>
+                                <Text style={styles.itemTypeStatLabel}>
+                                  Used
+                                </Text>
+                              </View>
+                              <View style={styles.itemTypeStat}>
+                                <Text
+                                  style={[
+                                    styles.itemTypeStatNumber,
+                                    { color: "#2e7d32" },
+                                  ]}
+                                >
+                                  {itemType.available}
+                                </Text>
+                                <Text style={styles.itemTypeStatLabel}>
+                                  Available
+                                </Text>
+                              </View>
                             </View>
-                            <View style={styles.itemTypeStat}>
-                              <Text
-                                style={[
-                                  styles.itemTypeStatNumber,
-                                  { color: "#2e7d32" },
-                                ]}
-                              >
-                                {itemType.available}
-                              </Text>
-                              <Text style={styles.itemTypeStatLabel}>
-                                Available
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
+                          </TouchableOpacity>
+
+                          {/* Item Type Jar Size Totals */}
+                          {expandedItemTypes.has(itemType.id) &&
+                            itemType.sizeCounts && (
+                              <View style={styles.itemSizeContainer}>
+                                {Object.keys(itemType.sizeCounts).length > 0 ? (
+                                  <View style={styles.itemSizeRow}>
+                                    {Object.entries(itemType.sizeCounts)
+                                      .sort(([, a], [, b]) => b - a)
+                                      .map(([size, count], index) => (
+                                        <Text
+                                          key={size}
+                                          style={styles.itemSizeText}
+                                        >
+                                          {size === "Unknown"
+                                            ? "Unknown"
+                                            : size}
+                                          : {count}
+                                          {index <
+                                            Object.keys(itemType.sizeCounts)
+                                              .length -
+                                              1 && ", "}
+                                        </Text>
+                                      ))}
+                                  </View>
+                                ) : (
+                                  <Text style={styles.emptyItemSizeList}>
+                                    No size data
+                                  </Text>
+                                )}
+                              </View>
+                            )}
+                        </React.Fragment>
                       ))}
                     </View>
                   )}
@@ -642,7 +786,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
     marginBottom: theme.spacing.sm,
@@ -652,6 +796,9 @@ const styles = StyleSheet.create({
   categoryInfo: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
+  },
+  categoryTextContainer: {
     flex: 1,
   },
   categoryIcon: {
@@ -664,8 +811,15 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     flex: 1,
   },
+  categorySizes: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+    fontWeight: theme.fontWeight.normal,
+  },
   expandIcon: {
     marginLeft: theme.spacing.sm,
+    marginRight: theme.spacing.md,
     alignSelf: "center",
   },
   categoryStats: {
@@ -783,14 +937,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    // borderBottomWidth: 1,
+    // borderBottomColor: theme.colors.border,
+  },
+  itemTypeNameContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   itemTypeName: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.text,
     flex: 1,
+  },
+  itemTypeSizes: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+    fontWeight: theme.fontWeight.normal,
   },
   itemTypeStats: {
     flexDirection: "row",
@@ -816,5 +981,194 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     color: theme.colors.textSecondary,
     textAlign: "center",
+  },
+  sizeIcon: {
+    marginLeft: theme.spacing.sm,
+  },
+  jarListContainer: {
+    backgroundColor: "#f8f9fa",
+    marginLeft: theme.spacing.lg,
+    marginRight: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
+  jarListTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  jarRow: {
+    backgroundColor: "white",
+    padding: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+    marginBottom: theme.spacing.xs,
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+  },
+  jarMainInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.xs,
+  },
+  jarItemName: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  jarSize: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  jarDetails: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  jarDate: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+  },
+  jarStatus: {
+    paddingHorizontal: theme.spacing.xs,
+    paddingVertical: 2,
+    borderRadius: theme.borderRadius.sm,
+  },
+  jarUsed: {
+    backgroundColor: "#fee",
+  },
+  jarAvailable: {
+    backgroundColor: "#efe",
+  },
+  jarStatusText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  jarUsedText: {
+    color: "#d32f2f",
+  },
+  jarAvailableText: {
+    color: "#2e7d32",
+  },
+  jarLocation: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  emptyJarList: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+    textAlign: "center",
+    padding: theme.spacing.md,
+  },
+  itemJarListContainer: {
+    backgroundColor: "#f8f9fa",
+    marginLeft: theme.spacing.lg,
+    marginRight: theme.spacing.lg,
+    marginBottom: theme.spacing.xs,
+    padding: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+  },
+  itemJarRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  itemJarInfo: {
+    flex: 1,
+  },
+  itemJarSize: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.text,
+  },
+  itemJarDate: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+  },
+  emptyItemJarList: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  sizeBreakdownContainer: {
+    backgroundColor: "#f5f5f5",
+    marginLeft: theme.spacing.lg,
+    marginRight: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
+  sizeBreakdownTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  sizeBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 2,
+  },
+  sizeBreakdownSize: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  sizeBreakdownCount: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  sizeBreakdownEmpty: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  itemTypeNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  itemTypeSizeDetails: {
+    marginTop: theme.spacing.xs,
+    paddingTop: theme.spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  itemTypeSizeText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    paddingVertical: 1,
+  },
+  itemSizeContainer: {
+    backgroundColor: "#f8f9fa",
+    marginLeft: theme.spacing.lg,
+    marginRight: theme.spacing.lg,
+    marginBottom: theme.spacing.xs,
+    padding: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+  },
+  itemSizeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  itemSizeText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.text,
+  },
+  emptyItemSizeList: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
   },
 });

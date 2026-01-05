@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -463,7 +464,7 @@ export default function AddBatchScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowItemTypeModal(false)}
       >
-        <View style={styles.modalContainer}>
+        <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Pressable
               onPress={() => setShowItemTypeModal(false)}
@@ -484,31 +485,15 @@ export default function AddBatchScreen() {
             placeholder="Search item types or add new..."
           />
 
-          {!searchQuery.trim() && existingItemTypes.length === 0 ? (
+          {existingItemTypes.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 No item types yet. Start typing to create your first one!
               </Text>
             </View>
-          ) : !searchQuery.trim() && existingItemTypes.length > 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                Start typing to search or create a new item type
-              </Text>
-            </View>
           ) : (
-            <FlatList
-              data={filteredItemTypes}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.itemTypeRow}
-                  onPress={() => onSelectExistingItemType(item)}
-                >
-                  <Text style={styles.itemTypeName}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
+            <>
+              {searchQuery.trim() && (
                 <TouchableOpacity
                   style={[styles.itemTypeRow, styles.createNewRow]}
                   onPress={() => {
@@ -530,10 +515,24 @@ export default function AddBatchScreen() {
                     </Text>
                   </View>
                 </TouchableOpacity>
-              }
-            />
+              )}
+              <FlatList
+                data={
+                  searchQuery.trim() ? filteredItemTypes : existingItemTypes
+                }
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.itemTypeRow}
+                    onPress={() => onSelectExistingItemType(item)}
+                  >
+                    <Text style={styles.itemTypeName}>{item.name}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </ScrollView>
   );

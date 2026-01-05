@@ -18,6 +18,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.veronikab.jartracker",
+      "versionCode": 2,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"

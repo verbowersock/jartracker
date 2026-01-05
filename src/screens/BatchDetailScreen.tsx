@@ -371,6 +371,49 @@ export default function BatchDetailScreen() {
     });
   };
 
+  const handleDeleteBatch = () => {
+    Alert.alert(
+      "Delete Batch",
+      `Are you sure you want to delete this entire batch of "${batchName}"? This will permanently delete all ${
+        jars.length
+      } jar${jars.length !== 1 ? "s" : ""} in this batch and cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const db = await getDb();
+              if (!db) {
+                throw new Error("Database connection failed");
+              }
+
+              // Delete all jars in this batch
+              await db.runAsync("DELETE FROM jars WHERE batchId = ?", [
+                batchId,
+              ]);
+
+              Alert.alert(
+                "Batch Deleted",
+                `The batch "${batchName}" has been deleted successfully.`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => navigation.goBack(),
+                  },
+                ]
+              );
+            } catch (error) {
+              console.error("Error deleting batch:", error);
+              Alert.alert("Error", `Failed to delete batch: ${error.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const availableJars = jars.filter((jar) => !jar.used);
   const usedJars = jars.filter((jar) => jar.used);
 
@@ -783,6 +826,16 @@ export default function BatchDetailScreen() {
                 : "Manage Individual Jars"}
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modalActionButton, styles.modalDeleteButton]}
+            onPress={handleDeleteBatch}
+          >
+            <Ionicons name="trash-outline" size={20} color="white" />
+            <Text style={styles.modalActionButtonText}>
+              Delete Entire Batch
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Individual Jar Management */}
@@ -1137,6 +1190,11 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: theme.colors.primary,
+  },
+  modalDeleteButton: {
+    backgroundColor: "#d32f2f",
+    borderWidth: 1,
+    borderColor: "#b71c1c",
   },
   modalActionButtonText: {
     fontSize: theme.fontSize.md,
