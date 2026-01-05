@@ -26,7 +26,7 @@ export const CATEGORIES = [
   { id: "pickles", name: "Pickles", icon: "🥒" },
   { id: "sauces", name: "Sauces", icon: "🍅" },
   { id: "meats", name: "Meats", icon: "🥩" },
-  { id: "juices", name: "Juices", icon: "🧃" },
+  { id: "drinks", name: "Drinks", icon: "🧃" },
   { id: "meals", name: "Meals", icon: "🍲" },
   { id: "other", name: "Other", icon: "📦" },
 ];
@@ -137,13 +137,13 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   }
 
   // Seed development data if in dev mode
-  if (__DEV__) {
-    try {
-      await seedDevelopmentData();
-    } catch (error) {
-      console.error("Error seeding development data:", error);
-    }
-  }
+  // if (__DEV__) {
+  //   try {
+  //     await seedDevelopmentData();
+  //   } catch (error) {
+  //     console.error("Error seeding development data:", error);
+  //   }
+  // }
 
   return db;
 }

@@ -486,14 +486,8 @@ export default function AddBatchScreen() {
           />
 
           {existingItemTypes.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                No item types yet. Start typing to create your first one!
-              </Text>
-            </View>
-          ) : (
-            <>
-              {searchQuery.trim() && (
+            <View style={styles.listContainer}>
+              {searchQuery.trim() ? (
                 <TouchableOpacity
                   style={[styles.itemTypeRow, styles.createNewRow]}
                   onPress={() => {
@@ -515,12 +509,53 @@ export default function AddBatchScreen() {
                     </Text>
                   </View>
                 </TouchableOpacity>
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    No item types yet. Start typing to create your first one!
+                  </Text>
+                </View>
               )}
+            </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {searchQuery.trim() &&
+                !existingItemTypes.some(
+                  (item) =>
+                    item.name.toLowerCase() === searchQuery.trim().toLowerCase()
+                ) && (
+                  <TouchableOpacity
+                    style={[styles.itemTypeRow, styles.createNewRow]}
+                    onPress={() => {
+                      setNewItemTypeName(searchQuery.trim());
+                      onCreateNewItemType();
+                    }}
+                  >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={24}
+                      color={theme.colors.primary}
+                    />
+                    <View style={styles.createNewContent}>
+                      <Text style={styles.createNewText}>
+                        Create new item type
+                      </Text>
+                      <Text style={styles.createNewName}>
+                        "{searchQuery.trim()}"
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
               <FlatList
                 data={
                   searchQuery.trim() ? filteredItemTypes : existingItemTypes
                 }
                 keyExtractor={(item) => String(item.id)}
+                style={styles.flatListStyle}
+                contentContainerStyle={styles.flatListContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled={true}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.itemTypeRow}
@@ -530,7 +565,7 @@ export default function AddBatchScreen() {
                   </TouchableOpacity>
                 )}
               />
-            </>
+            </View>
           )}
         </SafeAreaView>
       </Modal>
@@ -796,5 +831,15 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     color: theme.colors.textSecondary,
     marginTop: theme.spacing.xs,
+  },
+  listContainer: {
+    flex: 1,
+    minHeight: 200,
+  },
+  flatListStyle: {
+    flex: 1,
+  },
+  flatListContent: {
+    flexGrow: 1,
   },
 });
