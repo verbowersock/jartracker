@@ -8,11 +8,20 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
-import { getAllBatches, getJarStats, CATEGORIES, getDb } from "../db";
+import {
+  getAllBatches,
+  getJarStats,
+  getAllCategories,
+  type CustomCategory,
+  getDb,
+  formatDateStringWithUserPreference,
+  CATEGORIES,
+} from "../db";
 import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -36,6 +45,7 @@ type Batch = {
   availableJars: number;
   jarIds: number[];
   batchId: string;
+  formattedFillDate?: string;
 };
 
 export default function HomeScreen() {
@@ -46,6 +56,9 @@ export default function HomeScreen() {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] =
     React.useState<CategoryFilter>("all");
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [sortByDate, setSortByDate] = React.useState<"asc" | "desc">("desc");
+  const [categories, setCategories] = React.useState<CustomCategory[]>([]);
   const [isInitializing, setIsInitializing] = React.useState(true);
 
   const loadData = async () => {
@@ -53,12 +66,25 @@ export default function HomeScreen() {
       // Ensure DB is initialized first (this includes seeding)
       await getDb();
 
-      const [batchData, statsData] = await Promise.all([
+      const [batchData, statsData, categoriesData] = await Promise.all([
         getAllBatches(),
         getJarStats(),
+        getAllCategories(),
       ]);
-      setBatches(batchData);
+
+      // Format dates for each batch
+      const batchesWithFormattedDates = await Promise.all(
+        batchData.map(async (batch) => ({
+          ...batch,
+          formattedFillDate: await formatDateStringWithUserPreference(
+            batch.fillDate
+          ),
+        }))
+      );
+
+      setBatches(batchesWithFormattedDates);
       setStats(statsData);
+      setCategories(categoriesData);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -72,25 +98,52 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const filteredBatches = batches.filter((batch) => {
-    // Status filter
-    if (statusFilter === "available" && batch.availableJars === 0) return false;
-    if (statusFilter === "used" && batch.usedJars === 0) return false;
+  const filteredBatches = batches
+    .filter((batch) => {
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesName = batch.name.toLowerCase().includes(query);
+        const matchesNotes =
+          batch.notes?.toLowerCase().includes(query) || false;
+        const matchesLocation =
+          batch.location?.toLowerCase().includes(query) || false;
 
-    // Category filter
-    if (categoryFilter !== "all" && batch.category !== categoryFilter)
-      return false;
+        if (!matchesName && !matchesNotes && !matchesLocation) {
+          return false;
+        }
+      }
 
-    return true;
-  });
+      // Status filter
+      if (statusFilter === "available" && batch.availableJars === 0)
+        return false;
+      if (statusFilter === "used" && batch.usedJars === 0) return false;
+
+      // Category filter
+      if (categoryFilter !== "all" && batch.category !== categoryFilter)
+        return false;
+
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort by date
+      const dateA = new Date(a.fillDate).getTime();
+      const dateB = new Date(b.fillDate).getTime();
+
+      if (sortByDate === "asc") {
+        return dateA - dateB;
+      } else {
+        return dateB - dateA;
+      }
+    });
 
   const getCategoryIcon = (categoryId: string) => {
-    const category = CATEGORIES.find((c) => c.id === categoryId);
+    const category = categories.find((c) => c.name === categoryId);
     return category?.icon ?? "📦";
   };
 
   const getCategoryName = (categoryId: string) => {
-    const category = CATEGORIES.find((c) => c.id === categoryId);
+    const category = categories.find((c) => c.name === categoryId);
     return category?.name ?? "Other";
   };
 
@@ -130,7 +183,7 @@ export default function HomeScreen() {
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={16} color="#666" />
           <Text style={styles.detailText}>
-            Canned: {new Date(item.fillDate).toLocaleDateString()}
+            Canned: {item.formattedFillDate || item.fillDate}
           </Text>
         </View>
 
@@ -158,7 +211,11 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
-  const getCategoryColor = (categoryId: string): string => {
+  const getCategoryColor = (categoryName: string): string => {
+    // Find the category ID from the name
+    const category = CATEGORIES.find((c) => c.name === categoryName);
+    const categoryId = category?.id || "other";
+
     return (
       theme.categoryColors[categoryId as keyof typeof theme.categoryColors] ??
       theme.categoryColors.other
@@ -297,20 +354,21 @@ export default function HomeScreen() {
               </Text>
             </TouchableOpacity>
 
-            {CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <TouchableOpacity
-                key={category.id}
+                key={category.id || category.name}
                 style={[
                   styles.categoryButton,
-                  categoryFilter === category.id && styles.categoryButtonActive,
+                  categoryFilter === category.name &&
+                    styles.categoryButtonActive,
                 ]}
-                onPress={() => setCategoryFilter(category.id)}
+                onPress={() => setCategoryFilter(category.name)}
               >
                 <Text style={styles.categoryIcon}>{category.icon}</Text>
                 <Text
                   style={[
                     styles.categoryButtonText,
-                    categoryFilter === category.id &&
+                    categoryFilter === category.name &&
                       styles.categoryButtonTextActive,
                   ]}
                 >
@@ -319,6 +377,54 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Ionicons
+              name="search"
+              size={20}
+              color={theme.colors.textSecondary}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search batch names, notes, or loca..."
+              placeholderTextColor={theme.colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={() => setSearchQuery("")}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={20}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={() => setSortByDate(sortByDate === "asc" ? "desc" : "asc")}
+          >
+            <Ionicons
+              name={sortByDate === "asc" ? "calendar-outline" : "calendar"}
+              size={28}
+              color={theme.colors.primary}
+            />
+            <Ionicons
+              name={sortByDate === "asc" ? "arrow-up" : "arrow-down"}
+              size={22}
+              color={theme.colors.primary}
+              style={styles.sortArrow}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Batch Cards */}
@@ -476,9 +582,18 @@ const styles = StyleSheet.create({
   },
   batchesTitle: {
     fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.semibold,
+    fontWeight: theme.fontWeight.bold,
     color: theme.colors.text,
     marginBottom: theme.spacing.md,
+  },
+  sortButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.xs,
+  },
+  sortArrow: {
+    marginLeft: 2,
+    marginTop: -1,
   },
   batchCard: {
     backgroundColor: theme.colors.surface,
@@ -550,5 +665,42 @@ const styles = StyleSheet.create({
     color: theme.colors.textLight,
     marginTop: theme.spacing.xs,
     textAlign: "center",
+  },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: theme.spacing.xl,
+    marginVertical: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: theme.spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    paddingVertical: theme.spacing.xs,
+  },
+  clearButton: {
+    marginLeft: theme.spacing.sm,
+    padding: theme.spacing.xs,
   },
 });

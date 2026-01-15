@@ -17,7 +17,10 @@ import QRLabelScreen from "./screens/QRLabelScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import BackupRestoreScreen from "./screens/BackupRestoreScreen";
 import StatisticsScreen from "./screens/StatisticsScreen";
-import AboutScreen from "./screens/AboutScreen";
+import SettingsScreen from "./screens/SettingsScreen";
+import CategoryManagementScreen from "./screens/CategoryManagementScreen";
+import JarSizeManagementScreen from "./screens/JarSizeManagementScreen";
+import RecipeManagementScreen from "./screens/RecipeManagementScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { theme } from "./theme";
 
@@ -35,6 +38,9 @@ export type RootStackParamList = {
   QRLabel: { jarId: number; batchIds?: number[] };
   QRScanner: undefined;
   BackupRestore: undefined;
+  CategoryManagement: undefined;
+  JarSizeManagement: undefined;
+  RecipeManagement: undefined;
 };
 
 export type TabParamList = {
@@ -42,7 +48,7 @@ export type TabParamList = {
   Statistics: undefined;
   Backup: undefined;
   Scan: undefined;
-  About: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -65,10 +71,8 @@ function Tabs() {
             iconName = focused ? "cloud-download" : "cloud-download-outline";
           } else if (route.name === "Scan") {
             iconName = focused ? "qr-code" : "qr-code-outline";
-          } else if (route.name === "About") {
-            iconName = focused
-              ? "information-circle"
-              : "information-circle-outline";
+          } else if (route.name === "Settings") {
+            iconName = focused ? "settings" : "settings-outline";
           } else {
             iconName = "ellipse";
           }
@@ -83,7 +87,7 @@ function Tabs() {
       <Tab.Screen name="Statistics" component={StatisticsScreen} />
       <Tab.Screen name="Backup" component={BackupRestoreScreen} />
       <Tab.Screen name="Scan" component={QRScannerScreen} />
-      <Tab.Screen name="About" component={AboutScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
@@ -137,6 +141,21 @@ export default function App() {
             name="BackupRestore"
             component={BackupRestoreScreen}
             options={{ title: "Backup & Restore" }}
+          />
+          <Stack.Screen
+            name="CategoryManagement"
+            component={CategoryManagementScreen}
+            options={{ title: "Manage Categories" }}
+          />
+          <Stack.Screen
+            name="JarSizeManagement"
+            component={JarSizeManagementScreen}
+            options={{ title: "Manage Jar Sizes" }}
+          />
+          <Stack.Screen
+            name="RecipeManagement"
+            component={RecipeManagementScreen}
+            options={{ title: "Recipe Collection" }}
           />
         </Stack.Navigator>
       </NavigationContainer>

@@ -21,7 +21,28 @@ import { Ionicons } from "@expo/vector-icons";
 import { FontAwesome6 } from "@expo/vector-icons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
-import { getDb, markJarUsed, CATEGORIES, JAR_SIZES } from "../db";
+import {
+  getDb,
+  markJarUsed,
+  getAllCategories,
+  getAllJarSizes,
+  deleteJarWithBatchCheck,
+  addJarToBatch,
+  getBatchRecipe,
+  updateBatchRecipe,
+  addMultipleJarsToBatch,
+  getJarsForBatch,
+  type CustomCategory,
+  type CustomJarSize,
+  formatDateWithUserPreference,
+  formatDateStringWithUserPreference,
+  getAllRecipes,
+  getRecipeById,
+  createRecipe,
+  updateRecipe,
+  setBatchRecipeById,
+  Recipe,
+} from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -36,13 +57,13 @@ type JarWithDetails = {
   fillDateISO: string;
 };
 
-const getCategoryIcon = (categoryId: string) => {
-  const category = CATEGORIES.find((c) => c.id === categoryId);
+const getCategoryIcon = (categoryId: string, categories: CustomCategory[]) => {
+  const category = categories.find((c) => c.name === categoryId);
   return category?.icon ?? "📦";
 };
 
-const getCategoryName = (categoryId: string) => {
-  const category = CATEGORIES.find((c) => c.id === categoryId);
+const getCategoryName = (categoryId: string, categories: CustomCategory[]) => {
+  const category = categories.find((c) => c.name === categoryId);
   return category?.name ?? "Other";
 };
 
@@ -80,6 +101,8 @@ export default function BatchDetailScreen() {
 
   const [jars, setJars] = React.useState<JarWithDetails[]>([]);
   const [itemType, setItemType] = React.useState<any>(null);
+  const [categories, setCategories] = React.useState<CustomCategory[]>([]);
+  const [jarSizes, setJarSizes] = React.useState<CustomJarSize[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showIndividualJars, setShowIndividualJars] = React.useState(false);
   const [isEditingRecipe, setIsEditingRecipe] = React.useState(false);
@@ -89,14 +112,25 @@ export default function BatchDetailScreen() {
   const [isRecipeExpanded, setIsRecipeExpanded] = React.useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = React.useState(false);
   const [recipeImage, setRecipeImage] = React.useState<string | null>(null);
+  const [recipeName, setRecipeName] = React.useState("");
+  const [selectedRecipe, setSelectedRecipe] = React.useState<Recipe | null>(
+    null
+  );
+  const [showRecipeSelector, setShowRecipeSelector] = React.useState(false);
+  const [showRecipeEditor, setShowRecipeEditor] = React.useState(false);
+  const [availableRecipes, setAvailableRecipes] = React.useState<Recipe[]>([]);
   const [isImageModalVisible, setIsImageModalVisible] = React.useState(false);
+  const [showAddJarModal, setShowAddJarModal] = React.useState(false);
+  const [newJarQuantity, setNewJarQuantity] = React.useState("1");
   const [isEditingDetails, setIsEditingDetails] = React.useState(false);
   const [jarSizeText, setJarSizeText] = React.useState("");
   const [locationText, setLocationText] = React.useState("");
   const [dateCannedText, setDateCannedText] = React.useState("");
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [fillDateObject, setFillDateObject] = React.useState(new Date());
+  const [formattedFillDate, setFormattedFillDate] = React.useState("");
   const [showJarSizeModal, setShowJarSizeModal] = React.useState(false);
+  const [showCategoryModal, setShowCategoryModal] = React.useState(false);
   const [shouldThrowError, setShouldThrowError] = React.useState(false);
 
   // Simulate error for testing ErrorBoundary (dev only)
@@ -133,10 +167,50 @@ export default function BatchDetailScreen() {
       });
       setItemType(itemTypeData);
 
-      // Initialize editable text fields
-      setRecipeText(itemTypeData?.recipe || "");
+      // Load categories
+      const categoriesData = await getAllCategories();
+      setCategories(categoriesData);
+
+      // Load jar sizes
+      const jarSizesData = await getAllJarSizes();
+      setJarSizes(jarSizesData);
+
+      // Load available recipes
+      const recipesData = await getAllRecipes();
+      setAvailableRecipes(recipesData);
+
+      // Load batch-specific recipe (not from item type)
+      const batchRecipeData = await getBatchRecipe(batchId);
+      setRecipeText(batchRecipeData?.recipe || "");
+      setRecipeImage(batchRecipeData?.recipe_image || null);
+
+      // Check if batch has a linked recipe from recipes table
+      const linkedRecipe = await db.getFirstAsync<{ recipeId: number | null }>(
+        "SELECT recipeId FROM jars WHERE batchId = ? LIMIT 1",
+        [batchId]
+      );
+
+      if (linkedRecipe?.recipeId) {
+        try {
+          const recipeData = await getRecipeById(linkedRecipe.recipeId);
+          if (recipeData) {
+            setSelectedRecipe(recipeData);
+            setRecipeName(recipeData.name);
+            // If we have a linked recipe and no custom recipe text, use the linked recipe's content
+            if (!batchRecipeData?.recipe && recipeData.content) {
+              setRecipeText(recipeData.content);
+            }
+            if (!batchRecipeData?.recipe_image && recipeData.image) {
+              setRecipeImage(recipeData.image);
+            }
+          }
+        } catch (error) {
+          console.error("Error loading linked recipe:", error);
+        }
+      }
+
+      // Initialize notes from item type
       setNotesText(itemTypeData?.notes || "");
-      setRecipeImage(itemTypeData?.recipe_image || null);
 
       // Get jars for this specific batch using batchId
       console.log("Fetching jars for batch ID:", batchId);
@@ -163,6 +237,9 @@ export default function BatchDetailScreen() {
       const dateObj = new Date(dateForEdit);
       if (!isNaN(dateObj.getTime())) {
         setFillDateObject(dateObj);
+        // Format the date for display using user preference
+        const formatted = await formatDateWithUserPreference(dateObj);
+        setFormattedFillDate(formatted);
       }
     } catch (error) {
       console.error("Error loading batch data:", error);
@@ -178,20 +255,77 @@ export default function BatchDetailScreen() {
 
   const saveRecipe = async () => {
     try {
-      const db = await getDb();
-      await db.runAsync(
-        "UPDATE item_types SET recipe = ?, recipe_image = ? WHERE id = ?",
-        [recipeText, recipeImage, itemTypeId]
-      );
-      setItemType((prev) => ({
-        ...prev,
-        recipe: recipeText,
-        recipe_image: recipeImage,
-      }));
+      if (selectedRecipe) {
+        // Update existing recipe if we're editing one
+        await updateRecipe(selectedRecipe.id, {
+          name: recipeName,
+          content: recipeText,
+          image: recipeImage || undefined,
+        });
+        // Update the selected recipe state
+        setSelectedRecipe({
+          ...selectedRecipe,
+          name: recipeName,
+          content: recipeText,
+          image: recipeImage,
+        });
+      } else {
+        // Create new recipe if we don't have one
+        if (recipeName.trim()) {
+          const newRecipeId = await createRecipe({
+            name: recipeName,
+            content: recipeText,
+            image: recipeImage || undefined,
+          });
+          const newRecipe = await getRecipeById(newRecipeId);
+          if (newRecipe) {
+            setSelectedRecipe(newRecipe);
+            await setBatchRecipeById(batchId, newRecipeId);
+          }
+        }
+      }
+
+      // Always save to batch as well
+      await updateBatchRecipe(batchId, recipeText, recipeImage);
+
       setIsEditingRecipe(false);
+      setShowRecipeEditor(false);
     } catch (error) {
       console.error("Error saving recipe:", error);
       Alert.alert("Error", "Failed to save recipe");
+    }
+  };
+
+  const selectExistingRecipe = async (recipe: Recipe) => {
+    try {
+      setSelectedRecipe(recipe);
+      setRecipeName(recipe.name);
+      setRecipeText(recipe.content);
+      setRecipeImage(recipe.image || null);
+      setShowRecipeSelector(false);
+
+      // Immediately save the selected recipe
+      await setBatchRecipeById(batchId, recipe.id);
+      await updateBatchRecipe(batchId, recipe.content, recipe.image || null);
+    } catch (error) {
+      console.error("Error selecting recipe:", error);
+      Alert.alert("Error", "Failed to select recipe");
+    }
+  };
+
+  const clearSelectedRecipe = async () => {
+    try {
+      setSelectedRecipe(null);
+      setRecipeText("");
+      setRecipeImage(null);
+      setRecipeName("");
+
+      // Clear recipe from batch in database
+      await setBatchRecipeById(batchId); // Pass undefined to clear
+      await updateBatchRecipe(batchId, "", null); // Clear custom recipe text and image
+    } catch (error) {
+      console.error("Error clearing recipe:", error);
+      Alert.alert("Error", "Failed to clear recipe");
     }
   };
 
@@ -212,7 +346,7 @@ export default function BatchDetailScreen() {
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: true,
+        allowsEditing: false,
         aspect: [4, 3],
         quality: 0.8,
       });
@@ -317,6 +451,25 @@ export default function BatchDetailScreen() {
     }
   };
 
+  const saveCategory = async (newCategory: string) => {
+    try {
+      const db = await getDb();
+
+      // Update the item type's category
+      await db.runAsync("UPDATE item_types SET category = ? WHERE id = ?", [
+        newCategory,
+        itemTypeId,
+      ]);
+
+      // Reload the data to reflect changes
+      await loadData();
+      setShowCategoryModal(false);
+    } catch (error) {
+      console.error("Error saving category:", error);
+      Alert.alert("Error", "Failed to save category");
+    }
+  };
+
   const isTextLong = (text: string) => {
     return text.length > 200 || text.split("\n").length > 4;
   };
@@ -361,6 +514,76 @@ export default function BatchDetailScreen() {
         },
       ]
     );
+  };
+
+  const handleRemoveJar = async (jarId: number, jarIndex: number) => {
+    Alert.alert(
+      "Remove Jar",
+      `Are you sure you want to remove Jar #${jarIndex + 1} from this batch?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await deleteJarWithBatchCheck(jarId);
+              if (result.success) {
+                if (result.batchDeleted) {
+                  Alert.alert(
+                    "Batch Deleted",
+                    "The batch is now empty and has been removed.",
+                    [{ text: "OK", onPress: () => navigation.goBack() }]
+                  );
+                } else {
+                  await loadData();
+                  Alert.alert("Success", "Jar removed from batch.");
+                }
+              }
+            } catch (error) {
+              console.error("Error removing jar:", error);
+              Alert.alert("Error", `Failed to remove jar: ${error.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAddJars = async () => {
+    try {
+      const quantity = parseInt(newJarQuantity);
+      if (isNaN(quantity) || quantity < 1 || quantity > 50) {
+        Alert.alert(
+          "Invalid Quantity",
+          "Please enter a number between 1 and 50"
+        );
+        return;
+      }
+
+      // Get current jar size and location from existing jars if available
+      const currentJar = jars.length > 0 ? jars[0] : null;
+
+      await addMultipleJarsToBatch(
+        batchId,
+        itemTypeId,
+        fillDate,
+        quantity,
+        currentJar?.jarSize,
+        currentJar?.location
+      );
+
+      setShowAddJarModal(false);
+      setNewJarQuantity("1");
+      await loadData();
+      Alert.alert(
+        "Success",
+        `Added ${quantity} jar${quantity > 1 ? "s" : ""} to the batch.`
+      );
+    } catch (error) {
+      console.error("Error adding jars:", error);
+      Alert.alert("Error", `Failed to add jars: ${error.message}`);
+    }
   };
 
   const handleGenerateLabels = () => {
@@ -430,25 +653,38 @@ export default function BatchDetailScreen() {
       <ScrollView
         style={styles.modalContent}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
+        contentContainerStyle={{
+          paddingBottom: theme.spacing.xl,
+          flexGrow: 1,
+        }}
+        nestedScrollEnabled={true}
       >
         {/* Batch Name and Category */}
         <View style={[styles.modalSection, styles.firstModalSection]}>
           <Text style={styles.modalBatchName}>{batchName}</Text>
           {itemType?.category && (
-            <View
+            <TouchableOpacity
               style={[
                 styles.modalCategoryChip,
                 {
                   backgroundColor: getCategoryColor(itemType.category),
                 },
               ]}
+              onPress={() => setShowCategoryModal(true)}
             >
-              <Text style={styles.modalCategoryText}>
-                {getCategoryIcon(itemType.category)}{" "}
-                {getCategoryName(itemType.category)}
-              </Text>
-            </View>
+              <View style={styles.categoryChipContent}>
+                <Text style={styles.modalCategoryText}>
+                  {getCategoryIcon(itemType.category, categories)}{" "}
+                  {getCategoryName(itemType.category, categories)}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={16}
+                  color="white"
+                  style={{ marginLeft: 4 }}
+                />
+              </View>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -520,11 +756,7 @@ export default function BatchDetailScreen() {
                   onPress={() => setShowDatePicker(true)}
                 >
                   <Text style={styles.dateButtonText}>
-                    {fillDateObject.toLocaleDateString("en-US", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      year: "numeric",
-                    })}
+                    {formattedFillDate || "Select Date"}
                   </Text>
                   <Ionicons
                     name="calendar-outline"
@@ -538,7 +770,7 @@ export default function BatchDetailScreen() {
                     mode="date"
                     display={Platform.OS === "ios" ? "spinner" : "default"}
                     accentColor={theme.colors.primary}
-                    onChange={(event, selectedDate) => {
+                    onChange={async (event, selectedDate) => {
                       setShowDatePicker(Platform.OS === "ios");
                       if (selectedDate) {
                         setFillDateObject(selectedDate);
@@ -546,6 +778,11 @@ export default function BatchDetailScreen() {
                           .toISOString()
                           .split("T")[0];
                         setDateCannedText(formattedDate);
+                        // Update the formatted display date
+                        const formatted = await formatDateWithUserPreference(
+                          selectedDate
+                        );
+                        setFormattedFillDate(formatted);
                       }
                     }}
                   />
@@ -553,9 +790,7 @@ export default function BatchDetailScreen() {
               </>
             ) : (
               <Text style={styles.modalDetailValue}>
-                {new Date(
-                  jars[0]?.fillDateISO || fillDate
-                ).toLocaleDateString()}
+                {formattedFillDate || "No date set"}
               </Text>
             )}
           </View>
@@ -607,38 +842,75 @@ export default function BatchDetailScreen() {
 
         {/* Recipe */}
         <View style={styles.modalSection}>
-          <View style={styles.editableHeader}>
-            <Text style={styles.modalSectionTitle}>Recipe</Text>
-            <View style={styles.headerActions}>
+          <Text style={styles.modalSectionTitle}>Recipe</Text>
+
+          {selectedRecipe || recipeText.trim() ? (
+            // Show selected recipe with edit option
+            <View style={styles.selectedRecipeContainer}>
+              <View style={styles.selectedRecipeInfo}>
+                <Text style={styles.selectedRecipeName}>
+                  {selectedRecipe ? selectedRecipe.name : "Custom Recipe"}
+                </Text>
+                {selectedRecipe && selectedRecipe.content && (
+                  <Text style={styles.selectedRecipePreview} numberOfLines={2}>
+                    {selectedRecipe.content}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.recipeActions}>
+                <TouchableOpacity
+                  style={styles.editRecipeButton}
+                  onPress={() => setShowRecipeEditor(true)}
+                >
+                  <Text style={styles.editRecipeText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.removeRecipeButton}
+                  onPress={clearSelectedRecipe}
+                >
+                  <Ionicons name="close" size={16} color={theme.colors.error} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            // Show add recipe buttons
+            <View style={styles.addRecipeButtons}>
               <TouchableOpacity
-                onPress={showImagePicker}
-                style={styles.imageButton}
+                style={styles.addExistingRecipeButton}
+                onPress={() => setShowRecipeSelector(true)}
               >
                 <Ionicons
-                  name="camera-outline"
+                  name="library-outline"
                   size={20}
                   color={theme.colors.primary}
                 />
+                <Text style={styles.addRecipeButtonText}>
+                  Add Existing Recipe
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
+                style={styles.addNewRecipeButton}
                 onPress={() => {
-                  if (isEditingRecipe) {
-                    saveRecipe();
-                  } else {
-                    setIsEditingRecipe(true);
-                  }
+                  // Set up for creating new recipe
+                  setSelectedRecipe(null);
+                  setRecipeName(`${itemType?.name || "Custom"} Recipe`);
+                  setRecipeText("");
+                  setRecipeImage(null);
+                  setShowRecipeEditor(true);
                 }}
               >
                 <Ionicons
-                  name={
-                    isEditingRecipe ? "checkmark-outline" : "create-outline"
-                  }
+                  name="add-outline"
                   size={20}
                   color={theme.colors.primary}
                 />
+                <Text style={styles.addRecipeButtonText}>
+                  Create New Recipe
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          )}
 
           {/* Recipe Image */}
           {recipeImage && (
@@ -656,58 +928,13 @@ export default function BatchDetailScreen() {
                   <Ionicons name="expand-outline" size={20} color="white" />
                 </View>
               </TouchableOpacity>
-              {/* Delete button only shows when editing */}
-              {isEditingRecipe && (
+              {/* Delete button only shows when editing and not using selected recipe */}
+              {isEditingRecipe && !selectedRecipe && (
                 <TouchableOpacity
                   style={styles.removeImageButton}
                   onPress={() => setRecipeImage(null)}
                 >
                   <Ionicons name="close-circle" size={24} color="#d32f2f" />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {isEditingRecipe ? (
-            <TextInput
-              style={styles.editableInput}
-              value={recipeText}
-              onChangeText={setRecipeText}
-              placeholder="Add recipe instructions..."
-              multiline
-              textAlignVertical="top"
-            />
-          ) : (
-            <View>
-              <TouchableOpacity
-                style={styles.modalNotesBox}
-                onPress={() => setIsEditingRecipe(true)}
-              >
-                <Text style={styles.modalNotesText}>
-                  {recipeText
-                    ? isRecipeExpanded || !isTextLong(recipeText)
-                      ? recipeText
-                      : getTruncatedText(recipeText)
-                    : "Tap to add recipe instructions..."}
-                </Text>
-              </TouchableOpacity>
-              {recipeText && isTextLong(recipeText) && (
-                <TouchableOpacity
-                  style={styles.expandButton}
-                  onPress={() => setIsRecipeExpanded(!isRecipeExpanded)}
-                >
-                  <Text style={styles.expandButtonText}>
-                    {isRecipeExpanded ? "Show Less" : "Show More"}
-                  </Text>
-                  <Ionicons
-                    name={
-                      isRecipeExpanded
-                        ? "chevron-up-outline"
-                        : "chevron-down-outline"
-                    }
-                    size={16}
-                    color={theme.colors.primary}
-                  />
                 </TouchableOpacity>
               )}
             </View>
@@ -841,56 +1068,83 @@ export default function BatchDetailScreen() {
         {/* Individual Jar Management */}
         {showIndividualJars && (
           <View style={styles.modalSection}>
-            <Text style={styles.modalSectionTitle}>Individual Jars</Text>
+            <View style={styles.sectionHeaderWithButton}>
+              <Text style={styles.modalSectionTitle}>Individual Jars</Text>
+              <TouchableOpacity
+                style={styles.addJarButton}
+                onPress={() => setShowAddJarModal(true)}
+              >
+                <Ionicons name="add" size={16} color="white" />
+                <Text style={styles.addJarButtonText}>Add Jars</Text>
+              </TouchableOpacity>
+            </View>
 
             {jars.length > 0 ? (
-              jars.map((item, index) => (
-                <View key={item.id} style={styles.jarCard}>
-                  <View style={styles.jarHeader}>
-                    <Text style={styles.jarNumber}>Jar #{index + 1}</Text>
-                    <View style={styles.jarStatus}>
-                      <Text
-                        style={[
-                          styles.statusText,
-                          { color: item.used ? "#d32f2f" : "#2e7d32" },
-                        ]}
-                      >
-                        {item.used ? "USED" : "AVAILABLE"}
-                      </Text>
+              <FlatList
+                data={jars}
+                keyExtractor={(item) => item.id.toString()}
+                scrollEnabled={false}
+                nestedScrollEnabled={true}
+                renderItem={({ item, index }) => (
+                  <View key={item.id} style={styles.jarCard}>
+                    <View style={styles.jarHeader}>
+                      <Text style={styles.jarNumber}>Jar #{index + 1}</Text>
+                      <View style={styles.jarStatus}>
+                        <Text
+                          style={[
+                            styles.statusText,
+                            { color: item.used ? "#d32f2f" : "#2e7d32" },
+                          ]}
+                        >
+                          {item.used ? "USED" : "AVAILABLE"}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
 
-                  <View style={styles.jarActions}>
-                    <TouchableOpacity
-                      style={styles.actionBtn}
-                      onPress={() =>
-                        navigation.navigate("QRLabel", { jarId: item.id })
-                      }
-                    >
-                      <Ionicons
-                        name="qr-code-outline"
-                        size={16}
-                        color="white"
-                      />
-                      <Text style={styles.actionBtnText}>Label</Text>
-                    </TouchableOpacity>
-
-                    {!item.used && (
+                    <View style={styles.jarActions}>
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.markUsedBtn]}
-                        onPress={() => handleMarkUsed(item.id)}
+                        style={styles.actionBtn}
+                        onPress={() =>
+                          navigation.navigate("QRLabel", { jarId: item.id })
+                        }
                       >
                         <Ionicons
-                          name="checkmark-outline"
+                          name="qr-code-outline"
                           size={16}
                           color="white"
                         />
-                        <Text style={styles.actionBtnText}>Mark Used</Text>
+                        <Text style={styles.actionBtnText}>Label</Text>
                       </TouchableOpacity>
-                    )}
+
+                      {!item.used && (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.markUsedBtn]}
+                          onPress={() => handleMarkUsed(item.id)}
+                        >
+                          <Ionicons
+                            name="checkmark-outline"
+                            size={16}
+                            color="white"
+                          />
+                          <Text style={styles.actionBtnText}>Mark Used</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.removeBtn]}
+                        onPress={() => handleRemoveJar(item.id, index)}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.actionBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              ))
+                )}
+              />
             ) : (
               <Text style={styles.emptyText}>No jars in this batch</Text>
             )}
@@ -935,7 +1189,7 @@ export default function BatchDetailScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowJarSizeModal(false)}
       >
-        <View style={styles.modalContainer}>
+        <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity
               onPress={() => setShowJarSizeModal(false)}
@@ -950,21 +1204,253 @@ export default function BatchDetailScreen() {
           </View>
 
           <FlatList
-            data={JAR_SIZES}
-            keyExtractor={(item) => item}
+            data={jarSizes}
+            keyExtractor={(item) => item.id?.toString() || item.name}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.itemTypeRow}
                 onPress={() => {
-                  setJarSizeText(item);
+                  setJarSizeText(item.name);
                   setShowJarSizeModal(false);
                 }}
               >
-                <Text style={styles.itemTypeName}>{item}</Text>
+                <Text style={styles.itemTypeName}>{item.name}</Text>
               </TouchableOpacity>
             )}
           />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Add Jar Modal */}
+      <Modal
+        visible={showAddJarModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowAddJarModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <SafeAreaView style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Add Jars to Batch</Text>
+
+            <Text style={styles.modalLabel}>Number of Jars:</Text>
+            <TextInput
+              style={styles.modalTextInput}
+              value={newJarQuantity}
+              onChangeText={setNewJarQuantity}
+              placeholder="1"
+              keyboardType="numeric"
+              autoFocus
+            />
+
+            <Text style={styles.modalNote}>
+              New jars will inherit the same size and location as existing jars
+              in this batch.
+            </Text>
+
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => {
+                  setShowAddJarModal(false);
+                  setNewJarQuantity("1");
+                }}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalAddButton]}
+                onPress={handleAddJars}
+              >
+                <Text style={styles.modalAddButtonText}>Add Jars</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
         </View>
+      </Modal>
+
+      {/* Category Selection Modal */}
+      <Modal
+        visible={showCategoryModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowCategoryModal(false)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel category selection"
+            >
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Category</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <FlatList
+            data={categories}
+            keyExtractor={(item) => item.id?.toString() || item.name}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.itemTypeRow}
+                onPress={() => saveCategory(item.name)}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.categoryIcon}>{item.icon}</Text>
+                  <Text style={[styles.itemTypeName, { marginLeft: 12 }]}>
+                    {item.name}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Recipe Selector Modal */}
+      <Modal
+        visible={showRecipeSelector}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowRecipeSelector(false)}
+              hitSlop={8}
+            >
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Recipe</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          {availableRecipes.length === 0 ? (
+            <View style={styles.emptyRecipeContainer}>
+              <Ionicons
+                name="restaurant-outline"
+                size={64}
+                color={theme.colors.textSecondary}
+              />
+              <Text style={styles.emptyRecipeText}>No recipes available</Text>
+              <Text style={styles.emptyRecipeSubtext}>
+                Create some recipes first or add recipes to your batches
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={availableRecipes}
+              keyExtractor={(item) => item.id!.toString()}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.recipeSelectionCard}
+                  onPress={() => selectExistingRecipe(item)}
+                >
+                  <View style={styles.recipeSelectionContent}>
+                    <Text style={styles.recipeSelectionName}>{item.name}</Text>
+                    <Text
+                      style={styles.recipeSelectionPreview}
+                      numberOfLines={2}
+                    >
+                      {item.content}
+                    </Text>
+                    {item.last_used_date && (
+                      <Text style={styles.recipeSelectionDate}>
+                        Last used:{" "}
+                        {new Date(item.last_used_date).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+                  {item.image && (
+                    <Image
+                      source={{ uri: item.image }}
+                      style={styles.recipeSelectionImage}
+                    />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Recipe Editor Modal */}
+      <Modal
+        visible={showRecipeEditor}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowRecipeEditor(false)}
+              hitSlop={8}
+            >
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>
+              {selectedRecipe ? "Edit Recipe" : "New Recipe"}
+            </Text>
+            <TouchableOpacity onPress={saveRecipe} hitSlop={8}>
+              <Text style={styles.modalCreate}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.recipeEditor}>
+            {/* Recipe Name */}
+            <Text style={styles.modalSectionTitle}>Recipe Name</Text>
+            <TextInput
+              style={styles.editableInput}
+              value={recipeName || `${itemType?.name || "Custom"} Recipe`}
+              onChangeText={setRecipeName}
+              placeholder="Enter recipe name"
+            />
+
+            {/* Recipe Content */}
+            <Text style={styles.modalSectionTitle}>Recipe Instructions</Text>
+            <TextInput
+              style={[styles.editableInput, { minHeight: 150 }]}
+              value={recipeText}
+              onChangeText={setRecipeText}
+              placeholder="Enter recipe instructions, ingredients, notes..."
+              multiline
+              numberOfLines={8}
+              textAlignVertical="top"
+            />
+
+            {/* Recipe Image */}
+            {recipeImage ? (
+              <View style={styles.recipeImageContainer}>
+                <Image
+                  source={{ uri: recipeImage }}
+                  style={styles.recipeImage}
+                  resizeMode="cover"
+                />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setRecipeImage(null)}
+                >
+                  <Ionicons name="close-circle" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.addImageButton}
+                onPress={showImagePicker}
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.addImageText}>Add Photo</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -1065,6 +1551,84 @@ const styles = StyleSheet.create({
   markUsedBtn: {
     backgroundColor: "#d32f2f",
   },
+  removeBtn: {
+    backgroundColor: "#ff6b6b",
+  },
+  sectionHeaderWithButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  addJarButton: {
+    backgroundColor: theme.colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addJarButtonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginVertical: theme.spacing.lg,
+    color: theme.colors.text,
+  },
+  modalTextInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 16,
+    backgroundColor: "white",
+  },
+  modalNote: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 24,
+    lineHeight: 18,
+  },
+  modalButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalCancelButton: {
+    backgroundColor: "#f5f5f5",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  modalCancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  modalAddButton: {
+    backgroundColor: theme.colors.primary,
+  },
+  modalAddButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   actionBtnText: {
     color: "white",
     fontSize: 12,
@@ -1104,6 +1668,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     borderRadius: theme.borderRadius.xl,
+  },
+  categoryChipContent: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   modalCategoryText: {
     fontSize: theme.fontSize.sm,
@@ -1338,6 +1906,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: theme.spacing.lg,
     paddingTop: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   modalTitle: {
     fontSize: theme.fontSize.lg,
@@ -1357,5 +1926,177 @@ const styles = StyleSheet.create({
   itemTypeName: {
     fontSize: theme.fontSize.md,
     color: theme.colors.text,
+  },
+  categoryIcon: {
+    fontSize: 20,
+  },
+  selectedRecipeIndicator: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  selectedRecipeText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  recipeSelectionCard: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  recipeSelectionContent: {
+    flex: 1,
+    marginRight: theme.spacing.md,
+  },
+  recipeSelectionName: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
+  },
+  recipeSelectionPreview: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: theme.spacing.xs,
+  },
+  recipeSelectionDate: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+  },
+  recipeSelectionImage: {
+    width: 60,
+    height: 60,
+    borderRadius: theme.borderRadius.sm,
+  },
+  emptyRecipeContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: theme.spacing.xl,
+  },
+  emptyRecipeText: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  emptyRecipeSubtext: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // Recipe section styles
+  selectedRecipeContainer: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  selectedRecipeInfo: {
+    flex: 1,
+  },
+  selectedRecipeName: {
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
+  },
+  selectedRecipePreview: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: 16,
+  },
+  recipeActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  editRecipeButton: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.sm,
+  },
+  editRecipeText: {
+    color: theme.colors.surface,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  removeRecipeButton: {
+    padding: theme.spacing.sm,
+  },
+  addRecipeButtons: {
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  addExistingRecipeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  addNewRecipeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderStyle: "dashed",
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  addRecipeButtonText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+    flex: 1,
+  },
+  recipeEditor: {
+    flex: 1,
+    padding: theme.spacing.lg,
+  },
+  addImageButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    borderStyle: "dashed",
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  addImageText: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.primary,
+    fontWeight: theme.fontWeight.medium,
+  },
+  modalCreate: {
+    color: theme.colors.primary,
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.semibold,
   },
 });

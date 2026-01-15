@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { getDb, CATEGORIES } from "../db";
+import { getDb, getAllCategories, type CustomCategory } from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -47,13 +47,13 @@ type MonthlyStats = {
   used: number;
 };
 
-const getCategoryIcon = (categoryId: string) => {
-  const category = CATEGORIES.find((c) => c.id === categoryId);
+const getCategoryIcon = (categoryId: string, categories: CustomCategory[]) => {
+  const category = categories.find((c) => c.name === categoryId);
   return category?.icon ?? "📦";
 };
 
-const getCategoryName = (categoryId: string) => {
-  const category = CATEGORIES.find((c) => c.id === categoryId);
+const getCategoryName = (categoryId: string, categories: CustomCategory[]) => {
+  const category = categories.find((c) => c.name === categoryId);
   return category?.name ?? "Other";
 };
 
@@ -93,6 +93,7 @@ export default function StatisticsScreen() {
   const [yearlyStats, setYearlyStats] = React.useState<YearlyStats[]>([]);
   const [categoryStats, setCategoryStats] = React.useState<CategoryStats[]>([]);
   const [itemTypeStats, setItemTypeStats] = React.useState<ItemTypeStats[]>([]);
+  const [categories, setCategories] = React.useState<CustomCategory[]>([]);
   const [expandedCategories, setExpandedCategories] = React.useState<
     Set<string>
   >(new Set());
@@ -111,15 +112,16 @@ export default function StatisticsScreen() {
       const db = await getDb();
       if (!db) throw new Error("Database connection failed");
 
-      // Load yearly statistics
+      // Load yearly statistics - track by usage year
       const yearlyData = await db.getAllAsync<YearlyStats>(`
         SELECT 
-          CAST(strftime('%Y', j.fillDateISO) as INTEGER) as year,
-          COUNT(*) as totalCanned,
-          SUM(j.used) as totalUsed,
-          COUNT(*) - SUM(j.used) as available
+          CAST(strftime('%Y', j.usedDateISO) as INTEGER) as year,
+          COUNT(DISTINCT j.batchId) as totalCanned,
+          COUNT(*) as totalUsed,
+          0 as available
         FROM jars j
-        GROUP BY strftime('%Y', j.fillDateISO)
+        WHERE j.used = 1 AND j.usedDateISO IS NOT NULL
+        GROUP BY strftime('%Y', j.usedDateISO)
         ORDER BY year DESC
       `);
 
@@ -143,26 +145,30 @@ export default function StatisticsScreen() {
       console.log("Final yearly data:", yearlyData);
       setYearlyStats(yearlyData);
 
-      // Load category statistics
+      // Load categories
+      const categoriesData = await getAllCategories();
+      setCategories(categoriesData);
+
+      // Load category statistics - track usage by year instead of canning by year
       const categoryData = await db.getAllAsync<CategoryStats>(
         `
         SELECT 
           COALESCE(it.category, 'other') as category,
           COUNT(j.id) as totalCanned,
-          SUM(j.used) as totalUsed,
+          SUM(CASE WHEN j.used = 1 AND strftime('%Y', j.usedDateISO) = ? THEN 1 ELSE 0 END) as totalUsed,
           COUNT(j.id) - SUM(j.used) as available
         FROM jars j
         LEFT JOIN item_types it ON j.itemTypeId = it.id
-        WHERE strftime('%Y', j.fillDateISO) = ?
         GROUP BY it.category
-        ORDER BY totalCanned DESC
+        HAVING totalUsed > 0
+        ORDER BY totalUsed DESC
       `,
         [selectedYear.toString()]
       );
 
       const categoryStatsWithNames = categoryData.map((stat) => ({
         ...stat,
-        categoryName: getCategoryName(stat.category),
+        categoryName: getCategoryName(stat.category, categoriesData),
       }));
 
       // Load jar size breakdown for each category
@@ -177,7 +183,9 @@ export default function StatisticsScreen() {
             COUNT(*) as count
           FROM jars j
           LEFT JOIN item_types it ON j.itemTypeId = it.id
-          WHERE COALESCE(it.category, 'other') = ? AND strftime('%Y', j.fillDateISO) = ?
+          WHERE COALESCE(it.category, 'other') = ? 
+            AND j.used = 1 
+            AND strftime('%Y', j.usedDateISO) = ?
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
@@ -192,7 +200,7 @@ export default function StatisticsScreen() {
 
       setCategoryStats(categoryStatsWithNames);
 
-      // Load item type statistics for selected year
+      // Load item type statistics - track usage by year instead of canning by year
       const itemTypeData = await db.getAllAsync<ItemTypeStats>(
         `
         SELECT 
@@ -200,13 +208,14 @@ export default function StatisticsScreen() {
           it.name,
           COALESCE(it.category, 'other') as category,
           COUNT(j.id) as totalCanned,
-          SUM(j.used) as totalUsed,
+          SUM(CASE WHEN j.used = 1 AND strftime('%Y', j.usedDateISO) = ? THEN 1 ELSE 0 END) as totalUsed,
           COUNT(j.id) - SUM(j.used) as available
         FROM item_types it
-        LEFT JOIN jars j ON j.itemTypeId = it.id AND strftime('%Y', j.fillDateISO) = ?
+        LEFT JOIN jars j ON j.itemTypeId = it.id
         WHERE j.id IS NOT NULL
         GROUP BY it.id, it.name, it.category
-        ORDER BY totalCanned DESC
+        HAVING totalUsed > 0
+        ORDER BY totalUsed DESC
       `,
         [selectedYear.toString()]
       );
@@ -222,7 +231,9 @@ export default function StatisticsScreen() {
             COALESCE(j.jarSize, 'Unknown') as jarSize,
             COUNT(*) as count
           FROM jars j
-          WHERE j.itemTypeId = ? AND strftime('%Y', j.fillDateISO) = ?
+          WHERE j.itemTypeId = ? 
+            AND j.used = 1 
+            AND strftime('%Y', j.usedDateISO) = ?
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
@@ -237,17 +248,19 @@ export default function StatisticsScreen() {
 
       setItemTypeStats(itemTypeData);
 
-      // Load monthly statistics for selected year
+      // Load monthly statistics for selected year - track usage by month
       const monthlyData = await db.getAllAsync<MonthlyStats>(
         `
         SELECT 
-          CAST(strftime('%m', j.fillDateISO) as INTEGER) as month,
-          CAST(strftime('%Y', j.fillDateISO) as INTEGER) as year,
-          COUNT(*) as canned,
-          SUM(j.used) as used
+          CAST(strftime('%m', j.usedDateISO) as INTEGER) as month,
+          CAST(strftime('%Y', j.usedDateISO) as INTEGER) as year,
+          0 as canned,
+          COUNT(*) as used
         FROM jars j
-        WHERE strftime('%Y', j.fillDateISO) = ?
-        GROUP BY strftime('%Y-%m', j.fillDateISO)
+        WHERE j.used = 1 
+          AND j.usedDateISO IS NOT NULL 
+          AND strftime('%Y', j.usedDateISO) = ?
+        GROUP BY strftime('%Y-%m', j.usedDateISO)
         ORDER BY month
       `,
         [selectedYear.toString()]
@@ -454,7 +467,7 @@ export default function StatisticsScreen() {
                     />
                     <View style={styles.categoryInfo}>
                       <Text style={styles.categoryIcon}>
-                        {getCategoryIcon(category.category)}
+                        {getCategoryIcon(category.category, categories)}
                       </Text>
                       <Text style={styles.categoryName}>
                         {category.categoryName}

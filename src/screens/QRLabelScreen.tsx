@@ -10,7 +10,7 @@ import {
 import QRCode from "react-native-qrcode-svg";
 import { RouteProp } from "@react-navigation/native";
 import type { RootStackParamList } from "../App";
-import { buildJarQrData, getDb } from "../db";
+import { buildJarQrData, getDb, formatDateWithUserPreference } from "../db";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import QRCodeGenerator from "qrcode-generator";
@@ -124,6 +124,9 @@ export default function QRLabelScreen({
   const generateHTMLForPDF = async (jarIds: number[]): Promise<string> => {
     const sheets: string[] = [];
 
+    // Get formatted current date once for all labels
+    const formattedDate = await formatDateWithUserPreference(new Date());
+
     // Process jars in groups of 24 (4x6 grid)
     for (let i = 0; i < jarIds.length; i += 24) {
       const sheetJars = jarIds.slice(i, i + 24);
@@ -148,7 +151,7 @@ export default function QRLabelScreen({
                   <img src="${qrCodeDataURL}" alt="QR Code ${currentJarId}" class="qr-image" />
                 </div>
                 <div class="label-id">ID: ${currentJarId}</div>
-                <div class="label-date">${new Date().toLocaleDateString()}</div>
+                <div class="label-date">${formattedDate}</div>
               </div>
             `;
           } catch (error) {
@@ -166,7 +169,7 @@ export default function QRLabelScreen({
                   <div class="qr-text">QR ${currentJarId}</div>
                 </div>
                 <div class="label-id">ID: ${currentJarId}</div>
-                <div class="label-date">${new Date().toLocaleDateString()}</div>
+                <div class="label-date">${formattedDate}</div>
               </div>
             `;
           }

@@ -9,7 +9,13 @@ import {
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../App";
-import { createJar, getDb, getJarsForItemType, markJarUsed } from "../db";
+import {
+  createJar,
+  getDb,
+  getJarsForItemType,
+  markJarUsed,
+  formatDateStringWithUserPreference,
+} from "../db";
 
 type Route = RouteProp<RootStackParamList, "ItemDetail">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -20,6 +26,9 @@ export default function ItemDetailScreen() {
   const itemTypeId = route.params.itemTypeId;
   const [name, setName] = React.useState("");
   const [jars, setJars] = React.useState<any[]>([]);
+  const [groupedJars, setGroupedJars] = React.useState<{
+    [date: string]: any[];
+  }>({});
 
   const reload = React.useCallback(async () => {
     const db = await getDb();
@@ -30,6 +39,19 @@ export default function ItemDetailScreen() {
     setName(row?.name ?? "");
     const js = await getJarsForItemType(itemTypeId);
     setJars(js);
+
+    // Group jars by formatted date
+    const groups: { [date: string]: any[] } = {};
+    for (const jar of js) {
+      const formattedDate = await formatDateStringWithUserPreference(
+        jar.fillDateISO
+      );
+      if (!groups[formattedDate]) {
+        groups[formattedDate] = [];
+      }
+      groups[formattedDate].push(jar);
+    }
+    setGroupedJars(groups);
   }, [itemTypeId]);
 
   React.useEffect(() => {
@@ -43,17 +65,7 @@ export default function ItemDetailScreen() {
   };
 
   // Group jars by date to enable batch label generation
-  const groupedJars = React.useMemo(() => {
-    const groups: { [date: string]: any[] } = {};
-    jars.forEach((jar) => {
-      const date = new Date(jar.fillDateISO).toLocaleDateString();
-      if (!groups[date]) {
-        groups[date] = [];
-      }
-      groups[date].push(jar);
-    });
-    return groups;
-  }, [jars]);
+  // Note: This is now handled in the reload function above
 
   const onGenerateBatchLabels = (batchJars: any[]) => {
     const jarIds = batchJars.map((jar) => jar.id);
