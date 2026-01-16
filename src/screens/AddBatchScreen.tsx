@@ -66,6 +66,7 @@ export default function AddBatchScreen() {
   const [category, setCategory] = React.useState("");
   const [jarSize, setJarSize] = React.useState("");
   const [location, setLocation] = React.useState("");
+  const [lowStockThreshold, setLowStockThreshold] = React.useState("0");
 
   // Modal state for selecting existing item types
   const [showItemTypeModal, setShowItemTypeModal] = React.useState(false);
@@ -121,6 +122,7 @@ export default function AddBatchScreen() {
     setRecipeImage(null);
     setNotes(itemType.notes || "");
     setCategory(itemType.category || "");
+    setLowStockThreshold((itemType.lowStockThreshold || 0).toString());
     setShowItemTypeModal(false);
     setSearchQuery("");
   };
@@ -131,6 +133,7 @@ export default function AddBatchScreen() {
     setRecipeImage(null);
     setNotes("");
     setCategory("");
+    setLowStockThreshold("0");
     setShowItemTypeModal(false);
     setSearchQuery("");
   };
@@ -319,13 +322,16 @@ export default function AddBatchScreen() {
       // Note: recipes are now batch-specific, not item-type specific
       if (
         notes !== (selectedItemType.notes || "") ||
-        category !== (selectedItemType.category || "")
+        category !== (selectedItemType.category || "") ||
+        parseInt(lowStockThreshold) !==
+          (selectedItemType.lowStockThreshold || 0)
       ) {
         await upsertItemType({
           id: selectedItemType.id,
           name: selectedItemType.name,
           category: category,
           notes: notes.trim() || undefined,
+          lowStockThreshold: parseInt(lowStockThreshold) || 0,
         });
       }
       itemTypeId = selectedItemType.id!;
@@ -342,6 +348,7 @@ export default function AddBatchScreen() {
         name: newItemTypeName.trim(),
         category: category,
         notes: notes.trim() || undefined,
+        lowStockThreshold: parseInt(lowStockThreshold) || 0,
       });
     }
 
@@ -619,6 +626,24 @@ export default function AddBatchScreen() {
         placeholder="Additional notes"
         multiline
       />
+
+      {/* Low Stock Threshold */}
+      <Text style={styles.label}>Low Stock Alert Threshold</Text>
+      <TextInput
+        style={styles.input}
+        value={lowStockThreshold}
+        onChangeText={(text) => {
+          // Only allow numbers
+          const numericText = text.replace(/[^0-9]/g, "");
+          setLowStockThreshold(numericText);
+        }}
+        placeholder="Set the amount to be alerted about"
+        keyboardType="numeric"
+      />
+      <Text style={styles.helperText}>
+        Set the amount to be alerted about when available jars fall below this
+        number
+      </Text>
 
       <TouchableOpacity style={styles.saveButton} onPress={validateAndSave}>
         <Text style={styles.saveButtonText}>Add Batch</Text>
@@ -1474,5 +1499,11 @@ const styles = StyleSheet.create({
   recipeEditor: {
     flex: 1,
     padding: theme.spacing.lg,
+  },
+  helperText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
   },
 });

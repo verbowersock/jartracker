@@ -111,6 +111,8 @@ export default function BatchDetailScreen() {
   const [notesText, setNotesText] = React.useState("");
   const [isRecipeExpanded, setIsRecipeExpanded] = React.useState(false);
   const [isNotesExpanded, setIsNotesExpanded] = React.useState(false);
+  const [isEditingThreshold, setIsEditingThreshold] = React.useState(false);
+  const [thresholdText, setThresholdText] = React.useState("0");
   const [recipeImage, setRecipeImage] = React.useState<string | null>(null);
   const [recipeName, setRecipeName] = React.useState("");
   const [selectedRecipe, setSelectedRecipe] = React.useState<Recipe | null>(
@@ -211,6 +213,7 @@ export default function BatchDetailScreen() {
 
       // Initialize notes from item type
       setNotesText(itemTypeData?.notes || "");
+      setThresholdText((itemTypeData?.lowStockThreshold || 0).toString());
 
       // Get jars for this specific batch using batchId
       console.log("Fetching jars for batch ID:", batchId);
@@ -422,6 +425,22 @@ export default function BatchDetailScreen() {
     } catch (error) {
       console.error("Error saving notes:", error);
       Alert.alert("Error", "Failed to save notes");
+    }
+  };
+
+  const saveThreshold = async () => {
+    try {
+      const db = await getDb();
+      const threshold = parseInt(thresholdText) || 0;
+      await db.runAsync(
+        "UPDATE item_types SET lowStockThreshold = ? WHERE id = ?",
+        [threshold, itemTypeId]
+      );
+      setItemType((prev) => ({ ...prev, lowStockThreshold: threshold }));
+      setIsEditingThreshold(false);
+    } catch (error) {
+      console.error("Error saving threshold:", error);
+      Alert.alert("Error", "Failed to save low stock threshold");
     }
   };
 
@@ -1004,6 +1023,67 @@ export default function BatchDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
+          )}
+        </View>
+
+        {/* Low Stock Threshold */}
+        <View style={styles.modalSection}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: theme.spacing.md,
+            }}
+          >
+            <Text style={styles.modalSectionTitle}>Low Stock Alert</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (isEditingThreshold) {
+                  saveThreshold();
+                } else {
+                  setIsEditingThreshold(true);
+                }
+              }}
+            >
+              <Ionicons
+                name={
+                  isEditingThreshold ? "checkmark-outline" : "create-outline"
+                }
+                size={20}
+                color={theme.colors.primary}
+              />
+            </TouchableOpacity>
+          </View>
+          {isEditingThreshold ? (
+            <View>
+              <TextInput
+                style={styles.editableInput}
+                value={thresholdText}
+                onChangeText={(text) => {
+                  // Only allow numbers
+                  const numericText = text.replace(/[^0-9]/g, "");
+                  setThresholdText(numericText);
+                }}
+                placeholder="Set the amount to be alerted about"
+                keyboardType="numeric"
+              />
+              <Text style={styles.helperText}>
+                Set the amount to be alerted about when available jars fall
+                below this number
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.modalNotesBox}
+              onPress={() => setIsEditingThreshold(true)}
+            >
+              <Text style={styles.modalNotesText}>
+                {(itemType?.lowStockThreshold || 0) > 0
+                  ? `Alert when below ${itemType?.lowStockThreshold} jars`
+                  : "Set the amount to be alerted about"}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -1791,7 +1871,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     fontSize: theme.fontSize.md,
     color: theme.colors.text,
-    minHeight: 100,
+    // minHeight: 50,
     textAlignVertical: "top",
   },
   detailInput: {
@@ -2098,5 +2178,22 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.semibold,
+  },
+  helperText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+  },
+  modalSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  editButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
   },
 });

@@ -21,6 +21,8 @@ import {
   getDb,
   formatDateStringWithUserPreference,
   CATEGORIES,
+  getRunningLowItems,
+  resetDb,
 } from "../db";
 import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
@@ -60,17 +62,29 @@ export default function HomeScreen() {
   const [sortByDate, setSortByDate] = React.useState<"asc" | "desc">("desc");
   const [categories, setCategories] = React.useState<CustomCategory[]>([]);
   const [isInitializing, setIsInitializing] = React.useState(true);
+  const [runningLowItems, setRunningLowItems] = React.useState<
+    Array<{
+      id: number;
+      name: string;
+      category?: string;
+      available: number;
+      threshold: number;
+      categoryIcon?: string;
+    }>
+  >([]);
 
   const loadData = async () => {
     try {
       // Ensure DB is initialized first (this includes seeding)
       await getDb();
 
-      const [batchData, statsData, categoriesData] = await Promise.all([
-        getAllBatches(),
-        getJarStats(),
-        getAllCategories(),
-      ]);
+      const [batchData, statsData, categoriesData, lowStockData] =
+        await Promise.all([
+          getAllBatches(),
+          getJarStats(),
+          getAllCategories(),
+          getRunningLowItems(),
+        ]);
 
       // Format dates for each batch
       const batchesWithFormattedDates = await Promise.all(
@@ -85,8 +99,45 @@ export default function HomeScreen() {
       setBatches(batchesWithFormattedDates);
       setStats(statsData);
       setCategories(categoriesData);
+      setRunningLowItems(lowStockData);
     } catch (error) {
       console.error("Error loading data:", error);
+
+      // If it's a database connection error, reset and try once more
+      if (
+        error?.message?.includes("shared object that was already released") ||
+        error?.message?.includes("database is closed")
+      ) {
+        console.log("Resetting database connection and retrying...");
+        resetDb();
+        try {
+          // Try one more time with fresh connection
+          const [batchData, statsData, categoriesData, lowStockData] =
+            await Promise.all([
+              getAllBatches(),
+              getJarStats(),
+              getAllCategories(),
+              getRunningLowItems(),
+            ]);
+
+          // Format dates for each batch
+          const batchesWithFormattedDates = await Promise.all(
+            batchData.map(async (batch) => ({
+              ...batch,
+              formattedFillDate: await formatDateStringWithUserPreference(
+                batch.fillDate
+              ),
+            }))
+          );
+
+          setBatches(batchesWithFormattedDates);
+          setStats(statsData);
+          setCategories(categoriesData);
+          setRunningLowItems(lowStockData);
+        } catch (retryError) {
+          console.error("Error loading data on retry:", retryError);
+        }
+      }
     } finally {
       setIsInitializing(false);
     }
@@ -147,70 +198,6 @@ export default function HomeScreen() {
     return category?.name ?? "Other";
   };
 
-  const renderBatchCard = ({ item }: { item: Batch }) => (
-    <TouchableOpacity
-      style={styles.batchCard}
-      onPress={() => {
-        // Navigate to the dedicated BatchDetailScreen
-        navigation.navigate("BatchDetail", {
-          batchName: item.name,
-          itemTypeId: item.id,
-          fillDate: item.fillDate,
-          batchId: item.batchId,
-        });
-      }}
-    >
-      <View style={styles.cardHeader}>
-        <Text style={styles.batchName}>{item.name}</Text>
-        <View
-          style={[
-            styles.categoryChip,
-            { backgroundColor: getCategoryColor(item.category) },
-          ]}
-        >
-          <Text style={styles.categoryChipText}>
-            {getCategoryIcon(item.category)} {getCategoryName(item.category)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.cardDetails}>
-        <View style={styles.detailRow}>
-          <FontAwesome6 name="jar" size={16} color="#666" />
-          <Text style={styles.detailText}>Size: {item.jarSize}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Ionicons name="calendar-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>
-            Canned: {item.formattedFillDate || item.fillDate}
-          </Text>
-        </View>
-
-        {item.location && (
-          <View style={styles.detailRow}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>Location: {item.location}</Text>
-          </View>
-        )}
-
-        {item.notes && (
-          <View style={styles.detailRow}>
-            <Ionicons name="document-text-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>Note: {item.notes}</Text>
-          </View>
-        )}
-
-        <View style={styles.jarStats}>
-          <Text style={styles.jarStatsText}>
-            {item.availableJars} available • {item.usedJars} used •{" "}
-            {item.totalJars} total
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
   const getCategoryColor = (categoryName: string): string => {
     // Find the category ID from the name
     const category = CATEGORIES.find((c) => c.name === categoryName);
@@ -219,6 +206,86 @@ export default function HomeScreen() {
     return (
       theme.categoryColors[categoryId as keyof typeof theme.categoryColors] ??
       theme.categoryColors.other
+    );
+  };
+
+  // Check if an item type is running low
+  const isItemRunningLow = (itemTypeId: number): boolean => {
+    return runningLowItems.some((item) => item.id === itemTypeId);
+  };
+
+  const renderBatchCard = ({ item }: { item: Batch }) => {
+    const isRunningLow = isItemRunningLow(item.id);
+
+    return (
+      <TouchableOpacity
+        style={[styles.batchCard, isRunningLow && styles.batchCardLowStock]}
+        onPress={() => {
+          // Navigate to the dedicated BatchDetailScreen
+          navigation.navigate("BatchDetail", {
+            batchName: item.name,
+            itemTypeId: item.id,
+            fillDate: item.fillDate,
+            batchId: item.batchId,
+          });
+        }}
+      >
+        {isRunningLow && (
+          <View style={styles.lowStockBadge}>
+            <Ionicons name="warning" size={14} color="#fff" />
+            <Text style={styles.lowStockBadgeText}>Running Low</Text>
+          </View>
+        )}
+
+        <View style={styles.cardHeader}>
+          <Text style={styles.batchName}>{item.name}</Text>
+          <View
+            style={[
+              styles.categoryChip,
+              { backgroundColor: getCategoryColor(item.category) },
+            ]}
+          >
+            <Text style={styles.categoryChipText}>
+              {getCategoryIcon(item.category)} {getCategoryName(item.category)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardDetails}>
+          <View style={styles.detailRow}>
+            <FontAwesome6 name="jar" size={16} color="#666" />
+            <Text style={styles.detailText}>Size: {item.jarSize}</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons name="calendar-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>
+              Canned: {item.formattedFillDate || item.fillDate}
+            </Text>
+          </View>
+
+          {item.location && (
+            <View style={styles.detailRow}>
+              <Ionicons name="location-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>Location: {item.location}</Text>
+            </View>
+          )}
+
+          {item.notes && (
+            <View style={styles.detailRow}>
+              <Ionicons name="document-text-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>Note: {item.notes}</Text>
+            </View>
+          )}
+
+          <View style={styles.jarStats}>
+            <Text style={styles.jarStatsText}>
+              {item.availableJars} available • {item.usedJars} used •{" "}
+              {item.totalJars} total
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -603,6 +670,30 @@ const styles = StyleSheet.create({
     ...theme.shadow.small,
     borderWidth: 1,
     borderColor: theme.colors.borderLight,
+    position: "relative",
+  },
+  batchCardLowStock: {
+    borderColor: theme.colors.accent,
+    borderWidth: 2,
+    backgroundColor: "#fcf4f2",
+  },
+  lowStockBadge: {
+    position: "absolute",
+    bottom: theme.spacing.xs,
+    right: theme.spacing.xs,
+    backgroundColor: theme.colors.accent,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    zIndex: 1,
+    gap: theme.spacing.xs,
+  },
+  lowStockBadgeText: {
+    color: "#fff",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
   },
   cardHeader: {
     flexDirection: "row",
@@ -680,15 +771,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   searchIcon: {
     marginRight: theme.spacing.sm,

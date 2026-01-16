@@ -60,13 +60,11 @@ export default function SettingsScreen({ navigation }: any) {
   };
 
   const handleWebsitePress = () => {
-    console.log("Website link pressed");
+    Linking.openURL("https://jartracker.vbdesigns.dev");
   };
 
   const handlePrivacyPolicyPress = () => {
-    Linking.openURL(
-      "https://verbowersock.github.io/JarTrackerPrivacy/privacy.html"
-    );
+    Linking.openURL("https://jartracker.vbdesigns.dev/privacy");
   };
 
   const renderSettingsContent = () => (

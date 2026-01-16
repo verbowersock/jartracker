@@ -7,6 +7,7 @@ export type ItemType = {
   recipe?: string;
   notes?: string;
   recipe_image?: string;
+  lowStockThreshold?: number;
 };
 
 export type Jar = {
@@ -77,29 +78,71 @@ export const JAR_SIZES = [
 ];
 
 let db: SQLite.SQLiteDatabase | null = null;
+let isInitializing = false;
+
+// Function to reset database connection
+export function resetDb(): void {
+  db = null;
+  isInitializing = false;
+}
+
+// Wrapper function to handle database operations with automatic retry
+async function withDb<T>(
+  operation: (db: SQLite.SQLiteDatabase) => Promise<T>
+): Promise<T> {
+  try {
+    const database = await getDb();
+    return await operation(database);
+  } catch (error) {
+    // Check if it's a database connection error
+    if (
+      error?.message?.includes("shared object that was already released") ||
+      error?.message?.includes("database is closed")
+    ) {
+      // console.log("Database connection lost, resetting and retrying...");
+      resetDb();
+      const database = await getDb();
+      return await operation(database);
+    }
+    throw error;
+  }
+}
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
 
+  // Prevent concurrent initialization
+  if (isInitializing) {
+    // Wait for the current initialization to complete
+    while (isInitializing) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (db) return db;
+  }
+
+  isInitializing = true;
+
   try {
     // Use the sync method which is more reliable
     db = SQLite.openDatabaseSync("jartracker.db");
-    console.log("Database opened successfully");
+    // console.log("Database opened successfully");
   } catch (error) {
     console.error("Failed to open database:", error);
     // Try with a different database name as fallback
-    console.log("Trying fallback database name...");
+    // console.log("Trying fallback database name...");
     try {
       db = SQLite.openDatabaseSync("jartracker_backup.db");
     } catch (fallbackError) {
       console.error("Fallback database also failed:", fallbackError);
+      isInitializing = false;
       throw new Error("Cannot open any database");
     }
   }
 
-  // Create tables with all columns
-  await db.execAsync(
-    `PRAGMA journal_mode = MEMORY;
+  try {
+    // Create tables with all columns
+    await db.execAsync(
+      `PRAGMA journal_mode = MEMORY;
      PRAGMA synchronous = NORMAL;
      CREATE TABLE IF NOT EXISTS item_types (
        id INTEGER PRIMARY KEY NOT NULL,
@@ -107,7 +150,8 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
        category TEXT,
        recipe TEXT,
        notes TEXT,
-       recipe_image TEXT
+       recipe_image TEXT,
+       lowStockThreshold INTEGER DEFAULT 0
      );
      CREATE TABLE IF NOT EXISTS recipes (
        id INTEGER PRIMARY KEY NOT NULL,
@@ -148,80 +192,90 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
        value TEXT NOT NULL
      );
      CREATE INDEX IF NOT EXISTS idx_jars_itemTypeId ON jars(itemTypeId);`
-  );
-
-  // Add new columns safely if they don't exist (for existing databases)
-  try {
-    // Check if category and recipe_image columns exist in item_types
-    const itemTypesInfo = await db.getAllAsync("PRAGMA table_info(item_types)");
-    const hasCategoryColumn = itemTypesInfo.some(
-      (col: any) => col.name === "category"
-    );
-    const hasItemTypeRecipeImageColumn = itemTypesInfo.some(
-      (col: any) => col.name === "recipe_image"
     );
 
-    if (!hasCategoryColumn) {
-      await db.execAsync("ALTER TABLE item_types ADD COLUMN category TEXT;");
-    }
-    if (!hasItemTypeRecipeImageColumn) {
-      await db.execAsync(
-        "ALTER TABLE item_types ADD COLUMN recipe_image TEXT;"
+    // Add new columns safely if they don't exist (for existing databases)
+    try {
+      // Check if category and recipe_image columns exist in item_types
+      const itemTypesInfo = await db.getAllAsync(
+        "PRAGMA table_info(item_types)"
       );
-    }
-
-    // Check if jarSize, location, batchId, recipe, and recipe_image columns exist in jars
-    const jarsInfo = await db.getAllAsync("PRAGMA table_info(jars)");
-    const hasJarSizeColumn = jarsInfo.some(
-      (col: any) => col.name === "jarSize"
-    );
-    const hasLocationColumn = jarsInfo.some(
-      (col: any) => col.name === "location"
-    );
-    const hasBatchIdColumn = jarsInfo.some(
-      (col: any) => col.name === "batchId"
-    );
-    const hasJarRecipeColumn = jarsInfo.some(
-      (col: any) => col.name === "recipe"
-    );
-    const hasJarRecipeImageColumn = jarsInfo.some(
-      (col: any) => col.name === "recipe_image"
-    );
-    const hasRecipeIdColumn = jarsInfo.some(
-      (col: any) => col.name === "recipeId"
-    );
-
-    if (!hasJarSizeColumn) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN jarSize TEXT;");
-    }
-    if (!hasLocationColumn) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN location TEXT;");
-    }
-    if (!hasBatchIdColumn) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN batchId TEXT;");
-    }
-    if (!hasJarRecipeColumn) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN recipe TEXT;");
-    }
-    if (!hasJarRecipeImageColumn) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN recipe_image TEXT;");
-    }
-    if (!hasRecipeIdColumn) {
-      await db.execAsync(
-        "ALTER TABLE jars ADD COLUMN recipeId INTEGER REFERENCES recipes(id) ON DELETE SET NULL;"
+      const hasCategoryColumn = itemTypesInfo.some(
+        (col: any) => col.name === "category"
       );
-    }
+      const hasItemTypeRecipeImageColumn = itemTypesInfo.some(
+        (col: any) => col.name === "recipe_image"
+      );
+      const hasLowStockThresholdColumn = itemTypesInfo.some(
+        (col: any) => col.name === "lowStockThreshold"
+      );
 
-    // Add usedDateISO column for tracking when jars were used
-    const usedDateColumns = await db.getAllAsync<{ name: string }>(
-      "PRAGMA table_info(jars);"
-    );
-    if (!usedDateColumns.some((col) => col.name === "usedDateISO")) {
-      await db.execAsync("ALTER TABLE jars ADD COLUMN usedDateISO TEXT;");
-    }
+      if (!hasCategoryColumn) {
+        await db.execAsync("ALTER TABLE item_types ADD COLUMN category TEXT;");
+      }
+      if (!hasItemTypeRecipeImageColumn) {
+        await db.execAsync(
+          "ALTER TABLE item_types ADD COLUMN recipe_image TEXT;"
+        );
+      }
+      if (!hasLowStockThresholdColumn) {
+        await db.execAsync(
+          "ALTER TABLE item_types ADD COLUMN lowStockThreshold INTEGER DEFAULT 0;"
+        );
+      }
 
-    // Create recipes table if it doesn't exist
-    await db.execAsync(`
+      // Check if jarSize, location, batchId, recipe, and recipe_image columns exist in jars
+      const jarsInfo = await db.getAllAsync("PRAGMA table_info(jars)");
+      const hasJarSizeColumn = jarsInfo.some(
+        (col: any) => col.name === "jarSize"
+      );
+      const hasLocationColumn = jarsInfo.some(
+        (col: any) => col.name === "location"
+      );
+      const hasBatchIdColumn = jarsInfo.some(
+        (col: any) => col.name === "batchId"
+      );
+      const hasJarRecipeColumn = jarsInfo.some(
+        (col: any) => col.name === "recipe"
+      );
+      const hasJarRecipeImageColumn = jarsInfo.some(
+        (col: any) => col.name === "recipe_image"
+      );
+      const hasRecipeIdColumn = jarsInfo.some(
+        (col: any) => col.name === "recipeId"
+      );
+
+      if (!hasJarSizeColumn) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN jarSize TEXT;");
+      }
+      if (!hasLocationColumn) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN location TEXT;");
+      }
+      if (!hasBatchIdColumn) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN batchId TEXT;");
+      }
+      if (!hasJarRecipeColumn) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN recipe TEXT;");
+      }
+      if (!hasJarRecipeImageColumn) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN recipe_image TEXT;");
+      }
+      if (!hasRecipeIdColumn) {
+        await db.execAsync(
+          "ALTER TABLE jars ADD COLUMN recipeId INTEGER REFERENCES recipes(id) ON DELETE SET NULL;"
+        );
+      }
+
+      // Add usedDateISO column for tracking when jars were used
+      const usedDateColumns = await db.getAllAsync<{ name: string }>(
+        "PRAGMA table_info(jars);"
+      );
+      if (!usedDateColumns.some((col) => col.name === "usedDateISO")) {
+        await db.execAsync("ALTER TABLE jars ADD COLUMN usedDateISO TEXT;");
+      }
+
+      // Create recipes table if it doesn't exist
+      await db.execAsync(`
       CREATE TABLE IF NOT EXISTS recipes (
         id INTEGER PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
@@ -232,46 +286,53 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       );
     `);
 
-    // Check if hidden column exists in custom_jar_sizes
-    const jarSizesInfo = await db.getAllAsync(
-      "PRAGMA table_info(custom_jar_sizes)"
-    );
-    const hasHiddenColumn = jarSizesInfo.some(
-      (col: any) => col.name === "hidden"
-    );
-
-    if (!hasHiddenColumn) {
-      await db.execAsync(
-        "ALTER TABLE custom_jar_sizes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;"
+      // Check if hidden column exists in custom_jar_sizes
+      const jarSizesInfo = await db.getAllAsync(
+        "PRAGMA table_info(custom_jar_sizes)"
       );
-    }
-  } catch (error) {
-    // Columns might already exist, which is fine
-    console.log("Database migration info:", error);
-  }
+      const hasHiddenColumn = jarSizesInfo.some(
+        (col: any) => col.name === "hidden"
+      );
 
-  // Migrate recipes from item_types to jars for existing databases
-  await migrateRecipesFromItemTypesToJars(db);
-
-  // Automatically migrate unique recipes to recipe collection
-  await autoMigrateRecipesToCollection();
-
-  // Initialize custom categories with defaults if empty
-  await initializeCustomCategories();
-
-  // Initialize custom jar sizes with defaults if empty
-  await initializeCustomJarSizes();
-
-  // Seed development data if in dev mode
-  if (__DEV__) {
-    try {
-      await seedDevelopmentData();
+      if (!hasHiddenColumn) {
+        await db.execAsync(
+          "ALTER TABLE custom_jar_sizes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;"
+        );
+      }
     } catch (error) {
-      console.error("Error seeding development data:", error);
+      // Columns might already exist, which is fine
+      // console.log("Database migration info:", error);
     }
-  }
 
-  return db;
+    // Migrate recipes from item_types to jars for existing databases
+    await migrateRecipesFromItemTypesToJars(db);
+
+    // Automatically migrate unique recipes to recipe collection
+    await autoMigrateRecipesToCollection();
+
+    // Initialize custom categories with defaults if empty
+    await initializeCustomCategories();
+
+    // Initialize custom jar sizes with defaults if empty
+    await initializeCustomJarSizes();
+
+    // Seed development data if in dev mode
+    if (__DEV__) {
+      try {
+        await seedDevelopmentData();
+      } catch (error) {
+        console.error("Error seeding development data:", error);
+      }
+    }
+
+    isInitializing = false;
+    return db;
+  } catch (error) {
+    isInitializing = false;
+    console.error("Database initialization failed:", error);
+    db = null; // Reset db to null so it can be retried
+    throw error;
+  }
 }
 
 // Initialize custom categories with defaults and migrate existing data
@@ -285,7 +346,7 @@ async function initializeCustomCategories(): Promise<void> {
 
   if (existingCount && existingCount.count === 0) {
     // Populate with default categories
-    console.log("Populating default categories...");
+    // console.log("Populating default categories...");
     for (const category of CATEGORIES) {
       await database.runAsync(
         "INSERT INTO custom_categories (name, icon, isDefault) VALUES (?, ?, 1)",
@@ -328,9 +389,9 @@ async function migrateExistingCategories(): Promise<void> {
         "UPDATE item_types SET category = ? WHERE category = ?",
         [categoryMapping[category], category]
       );
-      console.log(
-        `Migrated category "${category}" to "${categoryMapping[category]}"`
-      );
+      // console.log(
+      //   `Migrated category "${category}" to "${categoryMapping[category]}"`
+      // );
     } else {
       // Check if this category exists in custom_categories
       const existsInCustom = await database.getFirstAsync<{ count: number }>(
@@ -352,10 +413,11 @@ async function migrateExistingCategories(): Promise<void> {
 
 // Get all categories (defaults + custom)
 export async function getAllCategories(): Promise<CustomCategory[]> {
-  const database = await getDb();
-  return await database.getAllAsync<CustomCategory>(
-    "SELECT * FROM custom_categories ORDER BY isDefault DESC, name COLLATE NOCASE"
-  );
+  return withDb(async (database) => {
+    return await database.getAllAsync<CustomCategory>(
+      "SELECT * FROM custom_categories ORDER BY isDefault DESC, name COLLATE NOCASE"
+    );
+  });
 }
 
 // Add a new custom category
@@ -597,23 +659,25 @@ export async function upsertItemType(itemType: ItemType): Promise<number> {
   const database = await getDb();
   if (itemType.id) {
     await database.runAsync(
-      "UPDATE item_types SET name = ?, category = ?, recipe = ?, notes = ?, recipe_image = ? WHERE id = ?",
+      "UPDATE item_types SET name = ?, category = ?, recipe = ?, notes = ?, recipe_image = ?, lowStockThreshold = ? WHERE id = ?",
       itemType.name,
       itemType.category ?? null,
       itemType.recipe ?? null,
       itemType.notes ?? null,
       itemType.recipe_image ?? null,
+      itemType.lowStockThreshold ?? 0,
       itemType.id
     );
     return itemType.id;
   }
   const res = await database.runAsync(
-    "INSERT INTO item_types (name, category, recipe, notes, recipe_image) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO item_types (name, category, recipe, notes, recipe_image, lowStockThreshold) VALUES (?, ?, ?, ?, ?, ?)",
     itemType.name,
     itemType.category ?? null,
     itemType.recipe ?? null,
     itemType.notes ?? null,
-    itemType.recipe_image ?? null
+    itemType.recipe_image ?? null,
+    itemType.lowStockThreshold ?? 0
   );
   return res.lastInsertRowId as number;
 }
@@ -621,6 +685,44 @@ export async function upsertItemType(itemType: ItemType): Promise<number> {
 export async function deleteItemType(id: number): Promise<void> {
   const database = await getDb();
   await database.runAsync("DELETE FROM item_types WHERE id = ?", id);
+}
+
+export async function getRunningLowItems(): Promise<
+  Array<{
+    id: number;
+    name: string;
+    category?: string;
+    available: number;
+    threshold: number;
+    categoryIcon?: string;
+  }>
+> {
+  return withDb(async (database) => {
+    const customCategories = await getAllCategories();
+
+    const runningLowItems = await database.getAllAsync(`
+      SELECT 
+        it.id,
+        it.name,
+        it.category,
+        it.lowStockThreshold as threshold,
+        COUNT(j.id) - SUM(j.used) as available
+      FROM item_types it
+      LEFT JOIN jars j ON j.itemTypeId = it.id
+      WHERE it.lowStockThreshold > 0
+      GROUP BY it.id, it.name, it.category, it.lowStockThreshold
+      HAVING available < it.lowStockThreshold AND available >= 0
+      ORDER BY (available * 1.0 / it.lowStockThreshold) ASC
+    `);
+
+    return runningLowItems.map((item: any) => {
+      const category = customCategories.find((c) => c.name === item.category);
+      return {
+        ...item,
+        categoryIcon: category?.icon ?? "📦",
+      };
+    });
+  });
 }
 
 export async function getItemTypesWithCounts(): Promise<
@@ -850,53 +952,54 @@ export async function getAllBatches(): Promise<
     batchId: string;
   }>
 > {
-  const database = await getDb();
-  const rows = await database.getAllAsync<{
-    itemTypeId: number;
-    name: string;
-    category: string | null;
-    notes: string | null;
-    fillDateISO: string;
-    jarSize: string | null;
-    location: string | null;
-    totalJars: number;
-    usedJars: number;
-    jarIds: string;
-    batchId: string | null;
-  }>(
-    `SELECT 
-       it.id as itemTypeId,
-       it.name,
-       it.category,
-       it.notes,
-       j.fillDateISO,
-       j.jarSize,
-       j.location,
-       j.batchId,
-       COUNT(j.id) as totalJars,
-       SUM(CASE WHEN j.used = 1 THEN 1 ELSE 0 END) as usedJars,
-       GROUP_CONCAT(j.id) as jarIds
-     FROM item_types it
-     JOIN jars j ON j.itemTypeId = it.id
-     WHERE j.batchId IS NOT NULL
-     GROUP BY j.batchId
-     ORDER BY datetime(j.fillDateISO) DESC`
-  );
+  return withDb(async (database) => {
+    const rows = await database.getAllAsync<{
+      itemTypeId: number;
+      name: string;
+      category: string | null;
+      notes: string | null;
+      fillDateISO: string;
+      jarSize: string | null;
+      location: string | null;
+      totalJars: number;
+      usedJars: number;
+      jarIds: string;
+      batchId: string | null;
+    }>(
+      `SELECT 
+         it.id as itemTypeId,
+         it.name,
+         it.category,
+         it.notes,
+         j.fillDateISO,
+         j.jarSize,
+         j.location,
+         j.batchId,
+         COUNT(j.id) as totalJars,
+         SUM(CASE WHEN j.used = 1 THEN 1 ELSE 0 END) as usedJars,
+         GROUP_CONCAT(j.id) as jarIds
+       FROM item_types it
+       JOIN jars j ON j.itemTypeId = it.id
+       WHERE j.batchId IS NOT NULL
+       GROUP BY j.batchId
+       ORDER BY datetime(j.fillDateISO) DESC`
+    );
 
-  return rows.map((r) => ({
-    id: r.itemTypeId,
-    name: r.name,
-    category: r.category ?? "other",
-    fillDate: r.fillDateISO,
-    jarSize: r.jarSize ?? "Unknown",
-    location: r.location ?? "",
-    notes: r.notes ?? "",
-    totalJars: r.totalJars,
-    usedJars: r.usedJars ?? 0,
-    availableJars: r.totalJars - (r.usedJars ?? 0),
-    jarIds: r.jarIds.split(",").map((id) => parseInt(id, 10)),
-    batchId: r.batchId ?? "",
-  }));
+    return rows.map((r) => ({
+      id: r.itemTypeId,
+      name: r.name,
+      category: r.category ?? "other",
+      fillDate: r.fillDateISO,
+      jarSize: r.jarSize ?? "Unknown",
+      location: r.location ?? "",
+      notes: r.notes ?? "",
+      totalJars: r.totalJars,
+      usedJars: r.usedJars ?? 0,
+      availableJars: r.totalJars - (r.usedJars ?? 0),
+      jarIds: r.jarIds.split(",").map((id) => parseInt(id, 10)),
+      batchId: r.batchId ?? "",
+    }));
+  });
 }
 
 export async function getJarStats(): Promise<{
@@ -904,28 +1007,29 @@ export async function getJarStats(): Promise<{
   available: number;
   used: number;
 }> {
-  const database = await getDb();
-  const result = await database.getFirstAsync<{
-    total: number;
-    used: number;
-  }>(
-    `SELECT 
-       COUNT(*) as total,
-       SUM(CASE WHEN used = 1 THEN 1 ELSE 0 END) as used
-     FROM jars`
-  );
+  return withDb(async (database) => {
+    const result = await database.getFirstAsync<{
+      total: number;
+      used: number;
+    }>(
+      `SELECT 
+         COUNT(*) as total,
+         SUM(CASE WHEN used = 1 THEN 1 ELSE 0 END) as used
+       FROM jars`
+    );
 
-  const total = result?.total ?? 0;
-  const used = result?.used ?? 0;
-  const available = total - used;
+    const total = result?.total ?? 0;
+    const used = result?.used ?? 0;
+    const available = total - used;
 
-  return { total, available, used };
+    return { total, available, used };
+  });
 }
 
 export async function exportToJson(): Promise<string> {
   const database = await getDb();
   const itemTypes = await database.getAllAsync<ItemType>(
-    "SELECT id, name, category, recipe, notes, recipe_image FROM item_types"
+    "SELECT id, name, category, recipe, notes, recipe_image, lowStockThreshold FROM item_types"
   );
   const jars = await database.getAllAsync<Jar>(
     "SELECT id, itemTypeId, fillDateISO, used, jarSize, location, batchId, recipeId FROM jars"

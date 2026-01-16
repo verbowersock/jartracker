@@ -41,19 +41,19 @@ export default function RecipeManagementScreen() {
 
   const loadRecipes = async () => {
     try {
-      console.log("Loading recipes from database...");
+      // console.log("Loading recipes from database...");
       const allRecipes = await getAllRecipes();
-      console.log(
-        "Found recipes:",
-        allRecipes.length,
-        allRecipes.map((r) => ({
-          id: r.id,
-          name: r.name,
-          hasImage: !!r.image,
-          created_date: r.created_date,
-          last_used_date: r.last_used_date,
-        }))
-      );
+      // console.log(
+      //   "Found recipes:",
+      //   allRecipes.length,
+      //   allRecipes.map((r) => ({
+      //     id: r.id,
+      //     name: r.name,
+      //     hasImage: !!r.image,
+      //     created_date: r.created_date,
+      //     last_used_date: r.last_used_date,
+      //   }))
+      // );
       setRecipes(allRecipes);
     } catch (error) {
       console.error("Error loading recipes:", error);
@@ -273,7 +273,7 @@ export default function RecipeManagementScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.header}>
         <Text style={styles.title}>Recipe Collection</Text>
         <TouchableOpacity onPress={() => openModal()} style={styles.addButton}>

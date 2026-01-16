@@ -3,7 +3,9 @@ export const theme = {
   colors: {
     primary: "#5d7a5d", // Main green color for buttons and outlines
     primaryDark: "#4a6249", // Darker shade for pressed states
+
     primaryLight: "#7a9679", // Lighter shade for subtle elements
+    accent: "#c76148", //terracota
     background: "#fefcf8", // Main background color
     surface: "#ffffff", // Card/surface background
     surfaceSecondary: "#f8f6f2", // Secondary surface color

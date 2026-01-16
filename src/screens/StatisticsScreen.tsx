@@ -512,7 +512,9 @@ export default function StatisticsScreen() {
           <Text style={styles.sectionTitle}>Canned in {selectedYear}</Text>
           {cannedCategoryStats.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No jars canned this year</Text>
+              <Text style={styles.emptyText}>
+                No records of jars canned this year
+              </Text>
             </View>
           ) : (
             cannedCategoryStats.map((category) => {
@@ -561,11 +563,11 @@ export default function StatisticsScreen() {
                     <View style={styles.expandedContent}>
                       {itemTypes.map((itemType) => (
                         <React.Fragment key={itemType.id}>
-                          <TouchableOpacity
+                          <View
                             style={styles.itemTypeRow}
-                            onPress={() => toggleItemType(itemType.id)}
+                            // onPress={() => toggleItemType(itemType.id)}
                           >
-                            <Ionicons
+                            {/* <Ionicons
                               name={
                                 expandedItemTypes.has(itemType.id)
                                   ? "chevron-up-outline"
@@ -574,13 +576,13 @@ export default function StatisticsScreen() {
                               size={14}
                               color={theme.colors.textSecondary}
                               style={styles.expandIcon}
-                            />
+                            /> */}
                             <View style={styles.itemTypeInfo}>
                               <Text style={styles.itemTypeName}>
                                 {itemType.name}
                               </Text>
                             </View>
-                            <View style={styles.itemTypeStats}>
+                            {/* <View style={styles.itemTypeStats}>
                               <View style={styles.itemTypeStat}>
                                 <Text style={styles.itemTypeStatNumber}>
                                   {itemType.totalCanned}
@@ -597,10 +599,18 @@ export default function StatisticsScreen() {
                                   used
                                 </Text>
                               </View>
-                            </View>
-                          </TouchableOpacity>
+                            </View> */}
+                            {itemType.sizeCounts && (
+                              <View style={styles.itemSizeContainer}>
+                                <Text style={styles.itemSizeText}>
+                                  {formatJarSizes(itemType.sizeCounts, true) ||
+                                    "No size data"}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
 
-                          {/* Item Type Jar Size Totals */}
+                          {/* Item Type Jar Size Totals
                           {expandedItemTypes.has(itemType.id) &&
                             itemType.sizeCounts && (
                               <View style={styles.itemSizeContainer}>
@@ -609,7 +619,7 @@ export default function StatisticsScreen() {
                                     "No size data"}
                                 </Text>
                               </View>
-                            )}
+                            )} */}
                         </React.Fragment>
                       ))}
                     </View>
@@ -625,7 +635,9 @@ export default function StatisticsScreen() {
           <Text style={styles.sectionTitle}>Used in {selectedYear}</Text>
           {usedCategoryStats.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No jars used this year</Text>
+              <Text style={styles.emptyText}>
+                No records of jars used this year
+              </Text>
             </View>
           ) : (
             usedCategoryStats.map((category) => {
@@ -672,11 +684,11 @@ export default function StatisticsScreen() {
                     <View style={styles.expandedContent}>
                       {itemTypes.map((itemType) => (
                         <React.Fragment key={itemType.id}>
-                          <TouchableOpacity
+                          <View
                             style={styles.itemTypeRow}
-                            onPress={() => toggleItemType(itemType.id)}
+                            // onPress={() => toggleItemType(itemType.id)}
                           >
-                            <Ionicons
+                            {/* <Ionicons
                               name={
                                 expandedItemTypes.has(itemType.id)
                                   ? "chevron-up-outline"
@@ -685,13 +697,13 @@ export default function StatisticsScreen() {
                               size={14}
                               color={theme.colors.textSecondary}
                               style={styles.expandIcon}
-                            />
+                            /> */}
                             <View style={styles.itemTypeInfo}>
                               <Text style={styles.itemTypeName}>
                                 {itemType.name}
                               </Text>
                             </View>
-                            <View style={styles.itemTypeStats}>
+                            {/* <View style={styles.itemTypeStats}>
                               <View style={styles.itemTypeStat}>
                                 <Text style={styles.itemTypeStatNumber}>
                                   {itemType.totalCanned}
@@ -708,12 +720,8 @@ export default function StatisticsScreen() {
                                   used
                                 </Text>
                               </View>
-                            </View>
-                          </TouchableOpacity>
-
-                          {/* Item Type Jar Size Totals */}
-                          {expandedItemTypes.has(itemType.id) &&
-                            itemType.sizeCounts && (
+                            </View> */}
+                            {itemType.sizeCounts && (
                               <View style={styles.itemSizeContainer}>
                                 <Text style={styles.itemSizeText}>
                                   {formatJarSizes(itemType.sizeCounts, true) ||
@@ -721,6 +729,18 @@ export default function StatisticsScreen() {
                                 </Text>
                               </View>
                             )}
+                          </View>
+
+                          {/* Item Type Jar Size Totals */}
+                          {/* {expandedItemTypes.has(itemType.id) &&
+                            itemType.sizeCounts && (
+                              <View style={styles.itemSizeContainer}>
+                                <Text style={styles.itemSizeText}>
+                                  {formatJarSizes(itemType.sizeCounts, true) ||
+                                    "No size data"}
+                                </Text>
+                              </View>
+                            )} */}
                         </React.Fragment>
                       ))}
                     </View>
@@ -849,12 +869,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
 
     borderWidth: 1,
     borderColor: theme.colors.border,
+    // backgroundColor: theme.colors.primary,
   },
   categoryInfo: {
     flexDirection: "row",
@@ -1000,6 +1021,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
+    // backgroundColor: theme.colors.accent,
     // borderBottomWidth: 1,
     // borderBottomColor: theme.colors.border,
   },
@@ -1009,7 +1031,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   itemTypeName: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.text,
     flex: 1,
@@ -1197,28 +1219,19 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontStyle: "italic",
   },
-  itemTypeNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   itemTypeSizeDetails: {
     marginTop: theme.spacing.xs,
     paddingTop: theme.spacing.xs,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
-  itemTypeSizeText: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.textSecondary,
-    paddingVertical: 1,
-  },
   itemSizeContainer: {
-    backgroundColor: "#f8f9fa",
+    //backgroundColor: "#e2562bff",
     // marginLeft: theme.spacing.lg,
     // marginRight: theme.spacing.lg,
+    // marginVertical: theme.spacing.md,
     marginBottom: theme.spacing.xs,
-    padding: theme.spacing.sm,
+    // padding: theme.spacing.sm,
     borderRadius: theme.borderRadius.sm,
   },
   itemSizeRow: {
@@ -1226,12 +1239,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   itemSizeText: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 30,
     color: theme.colors.text,
+    marginVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.xl,
   },
   emptyItemSizeList: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sm,
     color: theme.colors.textSecondary,
     fontStyle: "italic",
   },

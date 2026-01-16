@@ -1,6 +1,6 @@
 {
   "name": "jartracker",
-  "version": "1.0.3",
+  "version": "1.1.1",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
