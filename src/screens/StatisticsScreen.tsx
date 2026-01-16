@@ -18,7 +18,6 @@ type YearlyStats = {
   year: number;
   totalCanned: number;
   totalUsed: number;
-  available: number;
 };
 
 type CategoryStats = {
@@ -26,7 +25,6 @@ type CategoryStats = {
   categoryName: string;
   totalCanned: number;
   totalUsed: number;
-  available: number;
   sizeCounts?: { [jarSize: string]: number };
 };
 
@@ -36,7 +34,6 @@ type ItemTypeStats = {
   category: string;
   totalCanned: number;
   totalUsed: number;
-  available: number;
   sizeCounts?: { [jarSize: string]: number };
 };
 
@@ -55,13 +52,6 @@ const getCategoryIcon = (categoryId: string, categories: CustomCategory[]) => {
 const getCategoryName = (categoryId: string, categories: CustomCategory[]) => {
   const category = categories.find((c) => c.name === categoryId);
   return category?.name ?? "Other";
-};
-
-const getCategoryColor = (categoryId: string) => {
-  return (
-    theme.categoryColors[categoryId as keyof typeof theme.categoryColors] ??
-    theme.categoryColors.other
-  );
 };
 
 const formatJarSizes = (
@@ -92,6 +82,12 @@ const formatJarSizes = (
 export default function StatisticsScreen() {
   const [yearlyStats, setYearlyStats] = React.useState<YearlyStats[]>([]);
   const [categoryStats, setCategoryStats] = React.useState<CategoryStats[]>([]);
+  const [cannedCategoryStats, setCannedCategoryStats] = React.useState<
+    CategoryStats[]
+  >([]);
+  const [usedCategoryStats, setUsedCategoryStats] = React.useState<
+    CategoryStats[]
+  >([]);
   const [itemTypeStats, setItemTypeStats] = React.useState<ItemTypeStats[]>([]);
   const [categories, setCategories] = React.useState<CustomCategory[]>([]);
   const [expandedCategories, setExpandedCategories] = React.useState<
@@ -112,16 +108,31 @@ export default function StatisticsScreen() {
       const db = await getDb();
       if (!db) throw new Error("Database connection failed");
 
-      // Load yearly statistics - track by usage year
+      // Load yearly statistics - get all years from both canning and usage
       const yearlyData = await db.getAllAsync<YearlyStats>(`
         SELECT 
-          CAST(strftime('%Y', j.usedDateISO) as INTEGER) as year,
-          COUNT(DISTINCT j.batchId) as totalCanned,
-          COUNT(*) as totalUsed,
-          0 as available
-        FROM jars j
-        WHERE j.used = 1 AND j.usedDateISO IS NOT NULL
-        GROUP BY strftime('%Y', j.usedDateISO)
+          year,
+          SUM(totalCanned) as totalCanned,
+          SUM(totalUsed) as totalUsed
+        FROM (
+          SELECT 
+            CAST(strftime('%Y', j.fillDateISO) as INTEGER) as year,
+            COUNT(*) as totalCanned,
+            0 as totalUsed
+          FROM jars j
+          GROUP BY strftime('%Y', j.fillDateISO)
+          
+          UNION ALL
+          
+          SELECT 
+            CAST(strftime('%Y', j.usedDateISO) as INTEGER) as year,
+            0 as totalCanned,
+            COUNT(*) as totalUsed
+          FROM jars j
+          WHERE j.used = 1 AND j.usedDateISO IS NOT NULL
+          GROUP BY strftime('%Y', j.usedDateISO)
+        ) combined
+        GROUP BY year
         ORDER BY year DESC
       `);
 
@@ -138,7 +149,6 @@ export default function StatisticsScreen() {
           year: currentYear,
           totalCanned: 0,
           totalUsed: 0,
-          available: 0,
         });
       }
 
@@ -149,30 +159,74 @@ export default function StatisticsScreen() {
       const categoriesData = await getAllCategories();
       setCategories(categoriesData);
 
-      // Load category statistics - track usage by year instead of canning by year
-      const categoryData = await db.getAllAsync<CategoryStats>(
+      // Load category statistics - separate for canned and used
+      const cannedCategoryData = await db.getAllAsync<CategoryStats>(
         `
         SELECT 
           COALESCE(it.category, 'other') as category,
           COUNT(j.id) as totalCanned,
-          SUM(CASE WHEN j.used = 1 AND strftime('%Y', j.usedDateISO) = ? THEN 1 ELSE 0 END) as totalUsed,
-          COUNT(j.id) - SUM(j.used) as available
+          0 as totalUsed
         FROM jars j
         LEFT JOIN item_types it ON j.itemTypeId = it.id
+        WHERE strftime('%Y', j.fillDateISO) = ?
         GROUP BY it.category
-        HAVING totalUsed > 0
+        ORDER BY totalCanned DESC
+      `,
+        [selectedYear.toString()]
+      );
+
+      const usedCategoryData = await db.getAllAsync<CategoryStats>(
+        `
+        SELECT 
+          COALESCE(it.category, 'other') as category,
+          0 as totalCanned,
+          COUNT(j.id) as totalUsed
+        FROM jars j
+        LEFT JOIN item_types it ON j.itemTypeId = it.id
+        WHERE j.used = 1 AND strftime('%Y', j.usedDateISO) = ?
+        GROUP BY it.category
         ORDER BY totalUsed DESC
       `,
         [selectedYear.toString()]
       );
 
-      const categoryStatsWithNames = categoryData.map((stat) => ({
+      const cannedStatsWithNames = cannedCategoryData.map((stat) => ({
         ...stat,
         categoryName: getCategoryName(stat.category, categoriesData),
       }));
 
-      // Load jar size breakdown for each category
-      for (const category of categoryStatsWithNames) {
+      const usedStatsWithNames = usedCategoryData.map((stat) => ({
+        ...stat,
+        categoryName: getCategoryName(stat.category, categoriesData),
+      }));
+
+      // Load jar size breakdown for canned categories
+      for (const category of cannedStatsWithNames) {
+        const sizeData = await db.getAllAsync<{
+          jarSize: string;
+          count: number;
+        }>(
+          `
+          SELECT 
+            COALESCE(j.jarSize, 'Unknown') as jarSize,
+            COUNT(*) as count
+          FROM jars j
+          LEFT JOIN item_types it ON j.itemTypeId = it.id
+          WHERE COALESCE(it.category, 'other') = ? AND strftime('%Y', j.fillDateISO) = ?
+          GROUP BY j.jarSize
+          ORDER BY count DESC
+        `,
+          [category.category, selectedYear.toString()]
+        );
+
+        category.sizeCounts = {};
+        sizeData.forEach((row) => {
+          category.sizeCounts![row.jarSize] = row.count;
+        });
+      }
+
+      // Load jar size breakdown for used categories
+      for (const category of usedStatsWithNames) {
         const sizeData = await db.getAllAsync<{
           jarSize: string;
           count: number;
@@ -198,31 +252,47 @@ export default function StatisticsScreen() {
         });
       }
 
-      setCategoryStats(categoryStatsWithNames);
+      // Store both canned and used category stats separately
+      setCannedCategoryStats(cannedStatsWithNames);
+      setUsedCategoryStats(usedStatsWithNames);
+      setCategoryStats([...cannedStatsWithNames, ...usedStatsWithNames]);
 
-      // Load item type statistics - track usage by year instead of canning by year
+      // Load item type statistics for selected year
       const itemTypeData = await db.getAllAsync<ItemTypeStats>(
         `
         SELECT 
           it.id,
           it.name,
           COALESCE(it.category, 'other') as category,
-          COUNT(j.id) as totalCanned,
-          SUM(CASE WHEN j.used = 1 AND strftime('%Y', j.usedDateISO) = ? THEN 1 ELSE 0 END) as totalUsed,
-          COUNT(j.id) - SUM(j.used) as available
+          COALESCE(canned.totalCanned, 0) as totalCanned,
+          COALESCE(used.totalUsed, 0) as totalUsed
         FROM item_types it
-        LEFT JOIN jars j ON j.itemTypeId = it.id
-        WHERE j.id IS NOT NULL
-        GROUP BY it.id, it.name, it.category
-        HAVING totalUsed > 0
-        ORDER BY totalUsed DESC
+        LEFT JOIN (
+          SELECT 
+            j.itemTypeId,
+            COUNT(*) as totalCanned
+          FROM jars j
+          WHERE strftime('%Y', j.fillDateISO) = ?
+          GROUP BY j.itemTypeId
+        ) canned ON canned.itemTypeId = it.id
+        LEFT JOIN (
+          SELECT 
+            j.itemTypeId,
+            COUNT(*) as totalUsed
+          FROM jars j
+          WHERE j.used = 1 AND strftime('%Y', j.usedDateISO) = ?
+          GROUP BY j.itemTypeId
+        ) used ON used.itemTypeId = it.id
+        WHERE COALESCE(canned.totalCanned, 0) > 0 OR COALESCE(used.totalUsed, 0) > 0
+        ORDER BY COALESCE(canned.totalCanned, 0) + COALESCE(used.totalUsed, 0) DESC
       `,
-        [selectedYear.toString()]
+        [selectedYear.toString(), selectedYear.toString()]
       );
 
-      // Load jar size breakdown for each item type
+      // Load jar size breakdown for each item type - both canned and used
       for (const itemType of itemTypeData) {
-        const sizeData = await db.getAllAsync<{
+        // Get sizes for items canned in this year
+        const cannedSizeData = await db.getAllAsync<{
           jarSize: string;
           count: number;
         }>(
@@ -231,18 +301,39 @@ export default function StatisticsScreen() {
             COALESCE(j.jarSize, 'Unknown') as jarSize,
             COUNT(*) as count
           FROM jars j
-          WHERE j.itemTypeId = ? 
-            AND j.used = 1 
-            AND strftime('%Y', j.usedDateISO) = ?
+          WHERE j.itemTypeId = ? AND strftime('%Y', j.fillDateISO) = ?
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
           [itemType.id, selectedYear.toString()]
         );
 
+        // Get sizes for items used in this year
+        const usedSizeData = await db.getAllAsync<{
+          jarSize: string;
+          count: number;
+        }>(
+          `
+          SELECT 
+            COALESCE(j.jarSize, 'Unknown') as jarSize,
+            COUNT(*) as count
+          FROM jars j
+          WHERE j.itemTypeId = ? AND j.used = 1 AND strftime('%Y', j.usedDateISO) = ?
+          GROUP BY j.jarSize
+          ORDER BY count DESC
+        `,
+          [itemType.id, selectedYear.toString()]
+        );
+
+        // Combine size data from both canned and used
         itemType.sizeCounts = {};
-        sizeData.forEach((row) => {
-          itemType.sizeCounts![row.jarSize] = row.count;
+        cannedSizeData.forEach((row) => {
+          itemType.sizeCounts![row.jarSize] =
+            (itemType.sizeCounts![row.jarSize] || 0) + row.count;
+        });
+        usedSizeData.forEach((row) => {
+          itemType.sizeCounts![row.jarSize] =
+            (itemType.sizeCounts![row.jarSize] || 0) + row.count;
         });
       }
 
@@ -293,11 +384,6 @@ export default function StatisticsScreen() {
   const currentYearStats = yearlyStats.find(
     (stat) => stat.year === selectedYear
   );
-  const usageRate = currentYearStats
-    ? Math.round(
-        (currentYearStats.totalUsed / currentYearStats.totalCanned) * 100
-      )
-    : 0;
 
   const toggleCategory = async (category: string) => {
     const newExpanded = new Set(expandedCategories);
@@ -417,43 +503,31 @@ export default function StatisticsScreen() {
                 </Text>
                 <Text style={styles.metricLabel}>Jars Used</Text>
               </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="archive" size={24} color="#1976d2" />
-                <Text style={styles.metricNumber}>
-                  {currentYearStats.available}
-                </Text>
-                <Text style={styles.metricLabel}>Available</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="trending-up" size={24} color="#7b1fa2" />
-                <Text style={styles.metricNumber}>
-                  {usageRate ? `${usageRate}%` : `Unavailable`}
-                </Text>
-                <Text style={styles.metricLabel}>Usage Rate</Text>
-              </View>
             </View>
           </View>
         )}
 
-        {/* Category Breakdown */}
+        {/* Canned in Year */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Category Breakdown ({selectedYear})
-          </Text>
-          {categoryStats.length === 0 ? (
+          <Text style={styles.sectionTitle}>Canned in {selectedYear}</Text>
+          {cannedCategoryStats.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No categories to show</Text>
+              <Text style={styles.emptyText}>No jars canned this year</Text>
             </View>
           ) : (
-            categoryStats.map((category) => {
-              const isExpanded = expandedCategories.has(category.category);
+            cannedCategoryStats.map((category) => {
+              const isExpanded = expandedCategories.has(
+                `canned-${category.category}`
+              );
               const itemTypes = getItemTypesForCategory(category.category);
 
               return (
-                <View key={category.category}>
+                <View key={`canned-${category.category}`}>
                   <TouchableOpacity
                     style={styles.categoryRow}
-                    onPress={() => toggleCategory(category.category)}
+                    onPress={() =>
+                      toggleCategory(`canned-${category.category}`)
+                    }
                   >
                     <Ionicons
                       name={
@@ -461,7 +535,7 @@ export default function StatisticsScreen() {
                           ? "chevron-up-outline"
                           : "chevron-down-outline"
                       }
-                      size={20}
+                      size={16}
                       color={theme.colors.textSecondary}
                       style={styles.expandIcon}
                     />
@@ -470,7 +544,7 @@ export default function StatisticsScreen() {
                         {getCategoryIcon(category.category, categories)}
                       </Text>
                       <Text style={styles.categoryName}>
-                        {category.categoryName}
+                        {category.categoryName || category.category}
                       </Text>
                     </View>
                     <View style={styles.categoryStats}>
@@ -478,65 +552,33 @@ export default function StatisticsScreen() {
                         <Text style={styles.categoryStatNumber}>
                           {category.totalCanned}
                         </Text>
-                        <Text style={styles.categoryStatLabel}>Canned</Text>
-                      </View>
-                      <View style={styles.categoryStat}>
-                        <Text
-                          style={[
-                            styles.categoryStatNumber,
-                            { color: "#d32f2f" },
-                          ]}
-                        >
-                          {category.totalUsed}
-                        </Text>
-                        <Text style={styles.categoryStatLabel}>Used</Text>
-                      </View>
-                      <View style={styles.categoryStat}>
-                        <Text
-                          style={[
-                            styles.categoryStatNumber,
-                            { color: "#2e7d32" },
-                          ]}
-                        >
-                          {category.available}
-                        </Text>
-
-                        <Text style={styles.categoryStatLabel}>Available</Text>
+                        <Text style={styles.categoryStatLabel}>canned</Text>
                       </View>
                     </View>
                   </TouchableOpacity>
 
-                  {/* Expanded Item Types */}
-                  {isExpanded && itemTypes.length > 0 && (
-                    <View style={styles.itemTypesContainer}>
-                      {itemTypes.map((itemType, index) => (
+                  {isExpanded && (
+                    <View style={styles.expandedContent}>
+                      {itemTypes.map((itemType) => (
                         <React.Fragment key={itemType.id}>
                           <TouchableOpacity
-                            style={[
-                              styles.itemTypeRow,
-                              index === itemTypes.length - 1 && {
-                                borderBottomWidth: 0,
-                              },
-                            ]}
+                            style={styles.itemTypeRow}
                             onPress={() => toggleItemType(itemType.id)}
                           >
-                            <View style={styles.itemTypeNameContainer}>
-                              <Ionicons
-                                name={
-                                  expandedItemTypes.has(itemType.id)
-                                    ? "chevron-up-outline"
-                                    : "chevron-down-outline"
-                                }
-                                size={16}
-                                color={theme.colors.textSecondary}
-                                style={{ marginRight: theme.spacing.sm }}
-                              />
-
-                              <View style={styles.itemTypeNameRow}>
-                                <Text style={styles.itemTypeName}>
-                                  {itemType.name}
-                                </Text>
-                              </View>
+                            <Ionicons
+                              name={
+                                expandedItemTypes.has(itemType.id)
+                                  ? "chevron-up-outline"
+                                  : "chevron-down-outline"
+                              }
+                              size={14}
+                              color={theme.colors.textSecondary}
+                              style={styles.expandIcon}
+                            />
+                            <View style={styles.itemTypeInfo}>
+                              <Text style={styles.itemTypeName}>
+                                {itemType.name}
+                              </Text>
                             </View>
                             <View style={styles.itemTypeStats}>
                               <View style={styles.itemTypeStat}>
@@ -544,33 +586,15 @@ export default function StatisticsScreen() {
                                   {itemType.totalCanned}
                                 </Text>
                                 <Text style={styles.itemTypeStatLabel}>
-                                  Canned
+                                  canned
                                 </Text>
                               </View>
                               <View style={styles.itemTypeStat}>
-                                <Text
-                                  style={[
-                                    styles.itemTypeStatNumber,
-                                    { color: "#d32f2f" },
-                                  ]}
-                                >
+                                <Text style={styles.itemTypeStatNumber}>
                                   {itemType.totalUsed}
                                 </Text>
                                 <Text style={styles.itemTypeStatLabel}>
-                                  Used
-                                </Text>
-                              </View>
-                              <View style={styles.itemTypeStat}>
-                                <Text
-                                  style={[
-                                    styles.itemTypeStatNumber,
-                                    { color: "#2e7d32" },
-                                  ]}
-                                >
-                                  {itemType.available}
-                                </Text>
-                                <Text style={styles.itemTypeStatLabel}>
-                                  Available
+                                  used
                                 </Text>
                               </View>
                             </View>
@@ -580,31 +604,10 @@ export default function StatisticsScreen() {
                           {expandedItemTypes.has(itemType.id) &&
                             itemType.sizeCounts && (
                               <View style={styles.itemSizeContainer}>
-                                {Object.keys(itemType.sizeCounts).length > 0 ? (
-                                  <View style={styles.itemSizeRow}>
-                                    {Object.entries(itemType.sizeCounts)
-                                      .sort(([, a], [, b]) => b - a)
-                                      .map(([size, count], index) => (
-                                        <Text
-                                          key={size}
-                                          style={styles.itemSizeText}
-                                        >
-                                          {size === "Unknown"
-                                            ? "Unknown"
-                                            : size}
-                                          : {count}
-                                          {index <
-                                            Object.keys(itemType.sizeCounts)
-                                              .length -
-                                              1 && ", "}
-                                        </Text>
-                                      ))}
-                                  </View>
-                                ) : (
-                                  <Text style={styles.emptyItemSizeList}>
-                                    No size data
-                                  </Text>
-                                )}
+                                <Text style={styles.itemSizeText}>
+                                  {formatJarSizes(itemType.sizeCounts, true) ||
+                                    "No size data"}
+                                </Text>
                               </View>
                             )}
                         </React.Fragment>
@@ -617,62 +620,115 @@ export default function StatisticsScreen() {
           )}
         </View>
 
-        {/* Monthly Trends */}
+        {/* Used in Year */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Monthly Activity ({selectedYear})
-          </Text>
-          <View style={styles.monthlyChart}>
-            {Array.from({ length: 12 }, (_, i) => {
-              const monthNum = i + 1;
-              const monthData = monthlyStats.find((m) => m.month === monthNum);
-              const canned = monthData?.canned || 0;
-              const used = monthData?.used || 0;
-              const maxValue = Math.max(
-                ...monthlyStats.map((m) => m.canned),
-                50
+          <Text style={styles.sectionTitle}>Used in {selectedYear}</Text>
+          {usedCategoryStats.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No jars used this year</Text>
+            </View>
+          ) : (
+            usedCategoryStats.map((category) => {
+              const isExpanded = expandedCategories.has(
+                `used-${category.category}`
               );
+              const itemTypes = getItemTypesForCategory(category.category);
 
               return (
-                <View key={monthNum} style={styles.monthColumn}>
-                  <View style={styles.monthBars}>
-                    <View
-                      style={[
-                        styles.monthBar,
-                        styles.cannedBar,
-                        { height: Math.max((canned / maxValue) * 80, 2) },
-                      ]}
+                <View key={`used-${category.category}`}>
+                  <TouchableOpacity
+                    style={styles.categoryRow}
+                    onPress={() => toggleCategory(`used-${category.category}`)}
+                  >
+                    <Ionicons
+                      name={
+                        isExpanded
+                          ? "chevron-up-outline"
+                          : "chevron-down-outline"
+                      }
+                      size={16}
+                      color={theme.colors.textSecondary}
+                      style={styles.expandIcon}
                     />
-                    <View
-                      style={[
-                        styles.monthBar,
-                        styles.usedBar,
-                        { height: Math.max((used / maxValue) * 80, 2) },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.monthLabel}>
-                    {getMonthName(monthNum)}
-                  </Text>
-                  <Text style={styles.monthValue}>{canned}</Text>
+                    <View style={styles.categoryInfo}>
+                      <Text style={styles.categoryIcon}>
+                        {getCategoryIcon(category.category, categories)}
+                      </Text>
+                      <Text style={styles.categoryName}>
+                        {category.categoryName || category.category}
+                      </Text>
+                    </View>
+                    <View style={styles.categoryStats}>
+                      <View style={styles.categoryStat}>
+                        <Text style={styles.categoryStatNumber}>
+                          {category.totalUsed}
+                        </Text>
+                        <Text style={styles.categoryStatLabel}>used</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {isExpanded && (
+                    <View style={styles.expandedContent}>
+                      {itemTypes.map((itemType) => (
+                        <React.Fragment key={itemType.id}>
+                          <TouchableOpacity
+                            style={styles.itemTypeRow}
+                            onPress={() => toggleItemType(itemType.id)}
+                          >
+                            <Ionicons
+                              name={
+                                expandedItemTypes.has(itemType.id)
+                                  ? "chevron-up-outline"
+                                  : "chevron-down-outline"
+                              }
+                              size={14}
+                              color={theme.colors.textSecondary}
+                              style={styles.expandIcon}
+                            />
+                            <View style={styles.itemTypeInfo}>
+                              <Text style={styles.itemTypeName}>
+                                {itemType.name}
+                              </Text>
+                            </View>
+                            <View style={styles.itemTypeStats}>
+                              <View style={styles.itemTypeStat}>
+                                <Text style={styles.itemTypeStatNumber}>
+                                  {itemType.totalCanned}
+                                </Text>
+                                <Text style={styles.itemTypeStatLabel}>
+                                  canned
+                                </Text>
+                              </View>
+                              <View style={styles.itemTypeStat}>
+                                <Text style={styles.itemTypeStatNumber}>
+                                  {itemType.totalUsed}
+                                </Text>
+                                <Text style={styles.itemTypeStatLabel}>
+                                  used
+                                </Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+
+                          {/* Item Type Jar Size Totals */}
+                          {expandedItemTypes.has(itemType.id) &&
+                            itemType.sizeCounts && (
+                              <View style={styles.itemSizeContainer}>
+                                <Text style={styles.itemSizeText}>
+                                  {formatJarSizes(itemType.sizeCounts, true) ||
+                                    "No size data"}
+                                </Text>
+                              </View>
+                            )}
+                        </React.Fragment>
+                      ))}
+                    </View>
+                  )}
                 </View>
               );
-            })}
-          </View>
-          <View style={styles.chartLegend}>
-            <View style={styles.legendItem}>
-              <View
-                style={[styles.legendColor, { backgroundColor: "#2e7d32" }]}
-              />
-              <Text style={styles.legendLabel}>Canned</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View
-                style={[styles.legendColor, { backgroundColor: "#d32f2f" }]}
-              />
-              <Text style={styles.legendLabel}>Used</Text>
-            </View>
-          </View>
+            })
+          )}
         </View>
 
         {/* Yearly Comparison */}
@@ -684,9 +740,6 @@ export default function StatisticsScreen() {
             </View>
           ) : (
             yearlyStats.map((year, index) => {
-              const yearUsageRate = Math.round(
-                (year.totalUsed / year.totalCanned) * 100
-              );
               return (
                 <View
                   key={`comparison-${year.year}-${index}`}
@@ -699,9 +752,6 @@ export default function StatisticsScreen() {
                     </Text>
                     <Text style={styles.yearComparisonStat}>
                       {year.totalUsed} used
-                    </Text>
-                    <Text style={styles.yearComparisonStat}>
-                      {yearUsageRate ? `${yearUsageRate}% rate` : ``}
                     </Text>
                   </View>
                 </View>
@@ -802,7 +852,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
-    marginBottom: theme.spacing.sm,
+
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
@@ -1165,8 +1215,8 @@ const styles = StyleSheet.create({
   },
   itemSizeContainer: {
     backgroundColor: "#f8f9fa",
-    marginLeft: theme.spacing.lg,
-    marginRight: theme.spacing.lg,
+    // marginLeft: theme.spacing.lg,
+    // marginRight: theme.spacing.lg,
     marginBottom: theme.spacing.xs,
     padding: theme.spacing.sm,
     borderRadius: theme.borderRadius.sm,
@@ -1178,10 +1228,19 @@ const styles = StyleSheet.create({
   itemSizeText: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.text,
+    paddingHorizontal: theme.spacing.xl,
   },
   emptyItemSizeList: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.textSecondary,
     fontStyle: "italic",
+  },
+  expandedContent: {
+    backgroundColor: "white",
+  },
+  itemTypeInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
 });
