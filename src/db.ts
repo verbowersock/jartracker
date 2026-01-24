@@ -88,7 +88,7 @@ export function resetDb(): void {
 
 // Wrapper function to handle database operations with automatic retry
 async function withDb<T>(
-  operation: (db: SQLite.SQLiteDatabase) => Promise<T>
+  operation: (db: SQLite.SQLiteDatabase) => Promise<T>,
 ): Promise<T> {
   try {
     const database = await getDb();
@@ -191,23 +191,23 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
        key TEXT NOT NULL UNIQUE,
        value TEXT NOT NULL
      );
-     CREATE INDEX IF NOT EXISTS idx_jars_itemTypeId ON jars(itemTypeId);`
+     CREATE INDEX IF NOT EXISTS idx_jars_itemTypeId ON jars(itemTypeId);`,
     );
 
     // Add new columns safely if they don't exist (for existing databases)
     try {
       // Check if category and recipe_image columns exist in item_types
       const itemTypesInfo = await db.getAllAsync(
-        "PRAGMA table_info(item_types)"
+        "PRAGMA table_info(item_types)",
       );
       const hasCategoryColumn = itemTypesInfo.some(
-        (col: any) => col.name === "category"
+        (col: any) => col.name === "category",
       );
       const hasItemTypeRecipeImageColumn = itemTypesInfo.some(
-        (col: any) => col.name === "recipe_image"
+        (col: any) => col.name === "recipe_image",
       );
       const hasLowStockThresholdColumn = itemTypesInfo.some(
-        (col: any) => col.name === "lowStockThreshold"
+        (col: any) => col.name === "lowStockThreshold",
       );
 
       if (!hasCategoryColumn) {
@@ -215,34 +215,34 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       }
       if (!hasItemTypeRecipeImageColumn) {
         await db.execAsync(
-          "ALTER TABLE item_types ADD COLUMN recipe_image TEXT;"
+          "ALTER TABLE item_types ADD COLUMN recipe_image TEXT;",
         );
       }
       if (!hasLowStockThresholdColumn) {
         await db.execAsync(
-          "ALTER TABLE item_types ADD COLUMN lowStockThreshold INTEGER DEFAULT 0;"
+          "ALTER TABLE item_types ADD COLUMN lowStockThreshold INTEGER DEFAULT 0;",
         );
       }
 
       // Check if jarSize, location, batchId, recipe, and recipe_image columns exist in jars
       const jarsInfo = await db.getAllAsync("PRAGMA table_info(jars)");
       const hasJarSizeColumn = jarsInfo.some(
-        (col: any) => col.name === "jarSize"
+        (col: any) => col.name === "jarSize",
       );
       const hasLocationColumn = jarsInfo.some(
-        (col: any) => col.name === "location"
+        (col: any) => col.name === "location",
       );
       const hasBatchIdColumn = jarsInfo.some(
-        (col: any) => col.name === "batchId"
+        (col: any) => col.name === "batchId",
       );
       const hasJarRecipeColumn = jarsInfo.some(
-        (col: any) => col.name === "recipe"
+        (col: any) => col.name === "recipe",
       );
       const hasJarRecipeImageColumn = jarsInfo.some(
-        (col: any) => col.name === "recipe_image"
+        (col: any) => col.name === "recipe_image",
       );
       const hasRecipeIdColumn = jarsInfo.some(
-        (col: any) => col.name === "recipeId"
+        (col: any) => col.name === "recipeId",
       );
 
       if (!hasJarSizeColumn) {
@@ -262,13 +262,13 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       }
       if (!hasRecipeIdColumn) {
         await db.execAsync(
-          "ALTER TABLE jars ADD COLUMN recipeId INTEGER REFERENCES recipes(id) ON DELETE SET NULL;"
+          "ALTER TABLE jars ADD COLUMN recipeId INTEGER REFERENCES recipes(id) ON DELETE SET NULL;",
         );
       }
 
       // Add usedDateISO column for tracking when jars were used
       const usedDateColumns = await db.getAllAsync<{ name: string }>(
-        "PRAGMA table_info(jars);"
+        "PRAGMA table_info(jars);",
       );
       if (!usedDateColumns.some((col) => col.name === "usedDateISO")) {
         await db.execAsync("ALTER TABLE jars ADD COLUMN usedDateISO TEXT;");
@@ -288,15 +288,15 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
       // Check if hidden column exists in custom_jar_sizes
       const jarSizesInfo = await db.getAllAsync(
-        "PRAGMA table_info(custom_jar_sizes)"
+        "PRAGMA table_info(custom_jar_sizes)",
       );
       const hasHiddenColumn = jarSizesInfo.some(
-        (col: any) => col.name === "hidden"
+        (col: any) => col.name === "hidden",
       );
 
       if (!hasHiddenColumn) {
         await db.execAsync(
-          "ALTER TABLE custom_jar_sizes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;"
+          "ALTER TABLE custom_jar_sizes ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;",
         );
       }
     } catch (error) {
@@ -307,8 +307,8 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     // Migrate recipes from item_types to jars for existing databases
     await migrateRecipesFromItemTypesToJars(db);
 
-    // Automatically migrate unique recipes to recipe collection
-    await autoMigrateRecipesToCollection();
+    // Clear all legacy recipe data permanently - we only use recipeId now
+    await clearAllLegacyRecipeData();
 
     // Initialize custom categories with defaults if empty
     await initializeCustomCategories();
@@ -341,7 +341,7 @@ async function initializeCustomCategories(): Promise<void> {
 
   // Check if custom_categories table has any data
   const existingCount = await database.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM custom_categories"
+    "SELECT COUNT(*) as count FROM custom_categories",
   );
 
   if (existingCount && existingCount.count === 0) {
@@ -350,7 +350,7 @@ async function initializeCustomCategories(): Promise<void> {
     for (const category of CATEGORIES) {
       await database.runAsync(
         "INSERT INTO custom_categories (name, icon, isDefault) VALUES (?, ?, 1)",
-        [category.name, category.icon]
+        [category.name, category.icon],
       );
     }
 
@@ -365,7 +365,7 @@ async function migrateExistingCategories(): Promise<void> {
 
   // Get all unique categories currently used in item_types
   const existingCategories = await database.getAllAsync<{ category: string }>(
-    "SELECT DISTINCT category FROM item_types WHERE category IS NOT NULL AND category != ''"
+    "SELECT DISTINCT category FROM item_types WHERE category IS NOT NULL AND category != ''",
   );
 
   // Map old category IDs to proper names
@@ -387,7 +387,7 @@ async function migrateExistingCategories(): Promise<void> {
       // Update items to use the new category name
       await database.runAsync(
         "UPDATE item_types SET category = ? WHERE category = ?",
-        [categoryMapping[category], category]
+        [categoryMapping[category], category],
       );
       // console.log(
       //   `Migrated category "${category}" to "${categoryMapping[category]}"`
@@ -396,14 +396,14 @@ async function migrateExistingCategories(): Promise<void> {
       // Check if this category exists in custom_categories
       const existsInCustom = await database.getFirstAsync<{ count: number }>(
         "SELECT COUNT(*) as count FROM custom_categories WHERE name = ?",
-        [category]
+        [category],
       );
 
       if (existsInCustom && existsInCustom.count === 0) {
         // This is a custom category that doesn't exist in our table, add it
         await database.runAsync(
           "INSERT INTO custom_categories (name, icon, isDefault) VALUES (?, ?, 0)",
-          [category, "📦"] // Default icon for custom categories
+          [category, "📦"], // Default icon for custom categories
         );
         console.log(`Added existing category "${category}" as custom category`);
       }
@@ -415,7 +415,7 @@ async function migrateExistingCategories(): Promise<void> {
 export async function getAllCategories(): Promise<CustomCategory[]> {
   return withDb(async (database) => {
     return await database.getAllAsync<CustomCategory>(
-      "SELECT * FROM custom_categories ORDER BY isDefault DESC, name COLLATE NOCASE"
+      "SELECT * FROM custom_categories ORDER BY isDefault DESC, name COLLATE NOCASE",
     );
   });
 }
@@ -423,12 +423,12 @@ export async function getAllCategories(): Promise<CustomCategory[]> {
 // Add a new custom category
 export async function addCustomCategory(
   name: string,
-  icon: string
+  icon: string,
 ): Promise<number> {
   const database = await getDb();
   const result = await database.runAsync(
     "INSERT INTO custom_categories (name, icon, isDefault) VALUES (?, ?, 0)",
-    [name, icon]
+    [name, icon],
   );
   return result.lastInsertRowId as number;
 }
@@ -437,12 +437,12 @@ export async function addCustomCategory(
 export async function updateCustomCategory(
   id: number,
   name: string,
-  icon: string
+  icon: string,
 ): Promise<void> {
   const database = await getDb();
   await database.runAsync(
     "UPDATE custom_categories SET name = ?, icon = ? WHERE id = ? AND isDefault = 0",
-    [name, icon, id]
+    [name, icon, id],
   );
 }
 
@@ -453,7 +453,7 @@ export async function deleteCustomCategory(id: number): Promise<void> {
   // Get the category name first
   const category = await database.getFirstAsync<{ name: string }>(
     "SELECT name FROM custom_categories WHERE id = ? AND isDefault = 0",
-    [id]
+    [id],
   );
 
   if (!category) {
@@ -463,19 +463,19 @@ export async function deleteCustomCategory(id: number): Promise<void> {
   // Check if any items are using this category
   const itemsCount = await database.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM item_types WHERE category = ?",
-    [category.name]
+    [category.name],
   );
 
   if (itemsCount && itemsCount.count > 0) {
     throw new Error(
-      `Cannot delete category "${category.name}" because ${itemsCount.count} item(s) are still using it`
+      `Cannot delete category "${category.name}" because ${itemsCount.count} item(s) are still using it`,
     );
   }
 
   // Safe to delete
   await database.runAsync(
     "DELETE FROM custom_categories WHERE id = ? AND isDefault = 0",
-    [id]
+    [id],
   );
 }
 
@@ -487,7 +487,7 @@ async function initializeCustomJarSizes(): Promise<void> {
 
   // Check if we have any custom jar sizes
   const existingCount = await database.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM custom_jar_sizes"
+    "SELECT COUNT(*) as count FROM custom_jar_sizes",
   );
 
   if (existingCount && existingCount.count === 0) {
@@ -495,7 +495,7 @@ async function initializeCustomJarSizes(): Promise<void> {
     for (const jarSize of JAR_SIZES) {
       await database.runAsync(
         "INSERT INTO custom_jar_sizes (name, isDefault, hidden) VALUES (?, 1, 0)",
-        [jarSize]
+        [jarSize],
       );
       console.log(`Added default jar size: ${jarSize}`);
     }
@@ -520,7 +520,7 @@ async function migrateExistingJarSizes(): Promise<void> {
 
   // Get all unique jar sizes currently in use
   const existingJarSizes = await database.getAllAsync<{ jarSize: string }>(
-    "SELECT DISTINCT jarSize FROM jars WHERE jarSize IS NOT NULL AND jarSize != ''"
+    "SELECT DISTINCT jarSize FROM jars WHERE jarSize IS NOT NULL AND jarSize != ''",
   );
 
   for (const { jarSize } of existingJarSizes) {
@@ -532,20 +532,20 @@ async function migrateExistingJarSizes(): Promise<void> {
         jarSize,
       ]);
       console.log(
-        `Migrated jar size "${jarSize}" to "${jarSizeMapping[jarSize]}"`
+        `Migrated jar size "${jarSize}" to "${jarSizeMapping[jarSize]}"`,
       );
     } else {
       // Check if this jar size exists in custom_jar_sizes
       const existsInCustom = await database.getFirstAsync<{ count: number }>(
         "SELECT COUNT(*) as count FROM custom_jar_sizes WHERE name = ?",
-        [jarSize]
+        [jarSize],
       );
 
       if (existsInCustom && existsInCustom.count === 0) {
         // This is a custom jar size that doesn't exist in our table, add it
         await database.runAsync(
           "INSERT INTO custom_jar_sizes (name, isDefault, hidden) VALUES (?, 0, 0)",
-          [jarSize]
+          [jarSize],
         );
         console.log(`Migrated existing jar size: ${jarSize}`);
       }
@@ -557,7 +557,7 @@ async function migrateExistingJarSizes(): Promise<void> {
 export async function getAllJarSizes(): Promise<CustomJarSize[]> {
   const database = await getDb();
   const jarSizes = await database.getAllAsync<CustomJarSize>(
-    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes WHERE hidden = 0 ORDER BY isDefault DESC, name ASC"
+    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes WHERE hidden = 0 ORDER BY isDefault DESC, name ASC",
   );
   return jarSizes;
 }
@@ -568,7 +568,7 @@ export async function getAllJarSizesIncludingHidden(): Promise<
 > {
   const database = await getDb();
   const jarSizes = await database.getAllAsync<CustomJarSize>(
-    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes ORDER BY hidden ASC, isDefault DESC, name ASC"
+    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes ORDER BY hidden ASC, isDefault DESC, name ASC",
   );
   return jarSizes;
 }
@@ -578,7 +578,7 @@ export async function addCustomJarSize(name: string): Promise<number> {
   const database = await getDb();
   const result = await database.runAsync(
     "INSERT INTO custom_jar_sizes (name, isDefault, hidden) VALUES (?, 0, 0)",
-    [name]
+    [name],
   );
   return result.lastInsertRowId as number;
 }
@@ -586,14 +586,14 @@ export async function addCustomJarSize(name: string): Promise<number> {
 // Update a custom jar size (only non-defaults)
 export async function updateCustomJarSize(
   id: number,
-  name: string
+  name: string,
 ): Promise<void> {
   const database = await getDb();
 
   // First, get the current jar size name
   const currentJarSize = await database.getFirstAsync<{ name: string }>(
     "SELECT name FROM custom_jar_sizes WHERE id = ? AND isDefault = 0",
-    [id]
+    [id],
   );
 
   if (!currentJarSize) {
@@ -603,7 +603,7 @@ export async function updateCustomJarSize(
   // Update the jar size name in custom_jar_sizes
   await database.runAsync(
     "UPDATE custom_jar_sizes SET name = ? WHERE id = ? AND isDefault = 0",
-    [name, id]
+    [name, id],
   );
 
   // Update all existing jars that use the old jar size name
@@ -620,7 +620,7 @@ export async function deleteCustomJarSize(id: number): Promise<void> {
   // Get the jar size name first
   const jarSize = await database.getFirstAsync<{ name: string }>(
     "SELECT name FROM custom_jar_sizes WHERE id = ? AND isDefault = 0",
-    [id]
+    [id],
   );
 
   if (!jarSize) {
@@ -630,19 +630,19 @@ export async function deleteCustomJarSize(id: number): Promise<void> {
   // Check if any jars are using this size
   const jarsCount = await database.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM jars WHERE jarSize = ?",
-    [jarSize.name]
+    [jarSize.name],
   );
 
   if (jarsCount && jarsCount.count > 0) {
     throw new Error(
-      `Cannot delete jar size "${jarSize.name}" because ${jarsCount.count} jar(s) are still using it`
+      `Cannot delete jar size "${jarSize.name}" because ${jarsCount.count} jar(s) are still using it`,
     );
   }
 
   // Safe to delete
   await database.runAsync(
     "DELETE FROM custom_jar_sizes WHERE id = ? AND isDefault = 0",
-    [id]
+    [id],
   );
 }
 
@@ -651,7 +651,7 @@ export async function toggleJarSizeVisibility(id: number): Promise<void> {
   const database = await getDb();
   await database.runAsync(
     "UPDATE custom_jar_sizes SET hidden = CASE WHEN hidden = 0 THEN 1 ELSE 0 END WHERE id = ?",
-    [id]
+    [id],
   );
 }
 
@@ -666,7 +666,7 @@ export async function upsertItemType(itemType: ItemType): Promise<number> {
       itemType.notes ?? null,
       itemType.recipe_image ?? null,
       itemType.lowStockThreshold ?? 0,
-      itemType.id
+      itemType.id,
     );
     return itemType.id;
   }
@@ -677,7 +677,7 @@ export async function upsertItemType(itemType: ItemType): Promise<number> {
     itemType.recipe ?? null,
     itemType.notes ?? null,
     itemType.recipe_image ?? null,
-    itemType.lowStockThreshold ?? 0
+    itemType.lowStockThreshold ?? 0,
   );
   return res.lastInsertRowId as number;
 }
@@ -744,7 +744,7 @@ export async function getItemTypesWithCounts(): Promise<
        FROM item_types it
        LEFT JOIN jars j ON j.itemTypeId = it.id
       GROUP BY it.id
-      ORDER BY it.name COLLATE NOCASE`
+      ORDER BY it.name COLLATE NOCASE`,
   );
   return rows.map((r) => ({
     id: r.id,
@@ -761,7 +761,7 @@ export async function createJar(
   itemTypeId: number,
   fillDateISO: string,
   jarSize?: string,
-  location?: string
+  location?: string,
 ): Promise<number> {
   const database = await getDb();
   const res = await database.runAsync(
@@ -769,7 +769,7 @@ export async function createJar(
     itemTypeId,
     fillDateISO,
     jarSize ?? null,
-    location ?? null
+    location ?? null,
   );
   return res.lastInsertRowId as number;
 }
@@ -780,7 +780,7 @@ export async function createMultipleJars(
   quantity: number,
   jarSize?: string,
   location?: string,
-  recipeId?: number
+  recipeId?: number,
 ): Promise<{ jarIds: number[]; batchId: string }> {
   const database = await getDb();
   const jarIds: number[] = [];
@@ -800,7 +800,7 @@ export async function createMultipleJars(
         location ?? null,
         batchId,
         recipeId ?? null,
-      ]
+      ],
     );
     jarIds.push(res.lastInsertRowId as number);
   }
@@ -816,7 +816,7 @@ export async function getJarById(jarId: number): Promise<Jar | null> {
 }
 
 export async function markJarUsed(
-  jarId: number
+  jarId: number,
 ): Promise<{ success: boolean; message: string; jar?: Jar }> {
   const database = await getDb();
 
@@ -839,7 +839,7 @@ export async function markJarUsed(
   const usedDate = new Date().toISOString();
   await database.runAsync(
     "UPDATE jars SET used = 1, usedDateISO = ? WHERE id = ?",
-    [usedDate, jarId]
+    [usedDate, jarId],
   );
   return { success: true, message: "Jar marked as used successfully", jar };
 }
@@ -871,7 +871,7 @@ export async function deleteJarWithBatchCheck(jarId: number): Promise<{
   if (batchId) {
     const remainingJars = await database.getFirstAsync<{ count: number }>(
       "SELECT COUNT(*) as count FROM jars WHERE batchId = ?",
-      [batchId]
+      [batchId],
     );
 
     if (remainingJars && remainingJars.count === 0) {
@@ -888,12 +888,12 @@ export async function addJarToBatch(
   itemTypeId: number,
   fillDateISO: string,
   jarSize?: string,
-  location?: string
+  location?: string,
 ): Promise<number> {
   const database = await getDb();
   const res = await database.runAsync(
     "INSERT INTO jars (itemTypeId, fillDateISO, used, jarSize, location, batchId) VALUES (?, ?, 0, ?, ?, ?)",
-    [itemTypeId, fillDateISO, jarSize ?? null, location ?? null, batchId]
+    [itemTypeId, fillDateISO, jarSize ?? null, location ?? null, batchId],
   );
   return res.lastInsertRowId as number;
 }
@@ -904,7 +904,7 @@ export async function addMultipleJarsToBatch(
   fillDateISO: string,
   quantity: number,
   jarSize?: string,
-  location?: string
+  location?: string,
 ): Promise<number[]> {
   const database = await getDb();
   const jarIds: number[] = [];
@@ -912,7 +912,7 @@ export async function addMultipleJarsToBatch(
   for (let i = 0; i < quantity; i++) {
     const res = await database.runAsync(
       "INSERT INTO jars (itemTypeId, fillDateISO, used, jarSize, location, batchId) VALUES (?, ?, 0, ?, ?, ?)",
-      [itemTypeId, fillDateISO, jarSize ?? null, location ?? null, batchId]
+      [itemTypeId, fillDateISO, jarSize ?? null, location ?? null, batchId],
     );
     jarIds.push(res.lastInsertRowId as number);
   }
@@ -924,7 +924,7 @@ export async function getJarsForItemType(itemTypeId: number): Promise<Jar[]> {
   const database = await getDb();
   return await database.getAllAsync<Jar>(
     "SELECT * FROM jars WHERE itemTypeId = ? ORDER BY datetime(fillDateISO) DESC",
-    [itemTypeId]
+    [itemTypeId],
   );
 }
 
@@ -932,7 +932,7 @@ export async function getJarsForBatch(batchId: string): Promise<Jar[]> {
   const database = await getDb();
   return await database.getAllAsync<Jar>(
     "SELECT * FROM jars WHERE batchId = ? ORDER BY id ASC",
-    [batchId]
+    [batchId],
   );
 }
 
@@ -982,7 +982,7 @@ export async function getAllBatches(): Promise<
        JOIN jars j ON j.itemTypeId = it.id
        WHERE j.batchId IS NOT NULL
        GROUP BY j.batchId
-       ORDER BY datetime(j.fillDateISO) DESC`
+       ORDER BY datetime(j.fillDateISO) DESC`,
     );
 
     return rows.map((r) => ({
@@ -1015,7 +1015,7 @@ export async function getJarStats(): Promise<{
       `SELECT 
          COUNT(*) as total,
          SUM(CASE WHEN used = 1 THEN 1 ELSE 0 END) as used
-       FROM jars`
+       FROM jars`,
     );
 
     const total = result?.total ?? 0;
@@ -1029,24 +1029,24 @@ export async function getJarStats(): Promise<{
 export async function exportToJson(): Promise<string> {
   const database = await getDb();
   const itemTypes = await database.getAllAsync<ItemType>(
-    "SELECT id, name, category, recipe, notes, recipe_image, lowStockThreshold FROM item_types"
+    "SELECT id, name, category, recipe, notes, recipe_image, lowStockThreshold FROM item_types",
   );
   const jars = await database.getAllAsync<Jar>(
-    "SELECT id, itemTypeId, fillDateISO, used, jarSize, location, batchId, recipeId FROM jars"
+    "SELECT id, itemTypeId, fillDateISO, used, jarSize, location, batchId, recipeId FROM jars",
   );
   const customCategories = await database.getAllAsync<CustomCategory>(
-    "SELECT id, name, icon, isDefault FROM custom_categories"
+    "SELECT id, name, icon, isDefault FROM custom_categories",
   );
   const customJarSizes = await database.getAllAsync<CustomJarSize>(
-    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes"
+    "SELECT id, name, isDefault, hidden FROM custom_jar_sizes",
   );
   const recipes = await database.getAllAsync<Recipe>(
-    "SELECT id, name, content, image, created_date, last_used_date FROM recipes"
+    "SELECT id, name, content, image, created_date, last_used_date FROM recipes",
   );
   return JSON.stringify(
     { itemTypes, jars, customCategories, customJarSizes, recipes },
     null,
-    2
+    2,
   );
 }
 
@@ -1064,7 +1064,7 @@ export async function importFromJson(json: string): Promise<void> {
   await database.execAsync("BEGIN");
   try {
     await database.execAsync(
-      "DELETE FROM jars; DELETE FROM item_types; DELETE FROM custom_categories; DELETE FROM custom_jar_sizes; DELETE FROM recipes;"
+      "DELETE FROM jars; DELETE FROM item_types; DELETE FROM custom_categories; DELETE FROM custom_jar_sizes; DELETE FROM recipes;",
     );
 
     // Import custom categories first
@@ -1075,7 +1075,7 @@ export async function importFromJson(json: string): Promise<void> {
           category.id ?? null,
           category.name,
           category.icon,
-          category.isDefault ? 1 : 0
+          category.isDefault ? 1 : 0,
         );
       }
     } else {
@@ -1084,7 +1084,7 @@ export async function importFromJson(json: string): Promise<void> {
       for (const category of CATEGORIES) {
         await database.runAsync(
           "INSERT INTO custom_categories (name, icon, isDefault) VALUES (?, ?, 1)",
-          [category.name, category.icon]
+          [category.name, category.icon],
         );
       }
     }
@@ -1097,7 +1097,7 @@ export async function importFromJson(json: string): Promise<void> {
           jarSize.id ?? null,
           jarSize.name,
           jarSize.isDefault ? 1 : 0,
-          jarSize.hidden ? 1 : 0
+          jarSize.hidden ? 1 : 0,
         );
       }
     } else {
@@ -1106,7 +1106,7 @@ export async function importFromJson(json: string): Promise<void> {
       for (const jarSize of JAR_SIZES) {
         await database.runAsync(
           "INSERT INTO custom_jar_sizes (name, isDefault, hidden) VALUES (?, 1, 0)",
-          [jarSize]
+          [jarSize],
         );
       }
     }
@@ -1121,7 +1121,7 @@ export async function importFromJson(json: string): Promise<void> {
           recipe.content,
           recipe.image ?? null,
           recipe.created_date ?? null,
-          recipe.last_used_date ?? null
+          recipe.last_used_date ?? null,
         );
       }
     }
@@ -1153,14 +1153,14 @@ export async function importFromJson(json: string): Promise<void> {
         category ?? null,
         it.recipe ?? null,
         it.notes ?? null,
-        it.recipe_image ?? null
+        it.recipe_image ?? null,
       );
       // preserve ids
       if (!it.id) {
         await database.runAsync(
           "UPDATE item_types SET id = ? WHERE rowid = ?",
           res.lastInsertRowId,
-          res.lastInsertRowId
+          res.lastInsertRowId,
         );
       }
     }
@@ -1176,7 +1176,7 @@ export async function importFromJson(json: string): Promise<void> {
         j.batchId ?? null,
         null, // recipe (legacy field)
         null, // recipe_image (legacy field)
-        (j as any).recipeId ?? null // Include recipeId from backup
+        (j as any).recipeId ?? null, // Include recipeId from backup
       );
     }
 
@@ -1192,7 +1192,7 @@ export async function importFromJson(json: string): Promise<void> {
 
 // Migration function to copy recipes from item_types to jars
 async function migrateRecipesFromItemTypesToJars(
-  database: SQLite.SQLiteDatabase
+  database: SQLite.SQLiteDatabase,
 ): Promise<void> {
   try {
     // Find all jars that don't have recipes but their item_types do
@@ -1207,12 +1207,12 @@ async function migrateRecipesFromItemTypesToJars(
        FROM jars j 
        JOIN item_types it ON j.itemTypeId = it.id 
        WHERE (j.recipe IS NULL OR j.recipe = '') 
-       AND (it.recipe IS NOT NULL AND it.recipe != '')`
+       AND (it.recipe IS NOT NULL AND it.recipe != '')`,
     );
 
     if (jarsNeedingRecipes.length > 0) {
       console.log(
-        `Migrating recipes for ${jarsNeedingRecipes.length} jars from item_types to batch-specific storage`
+        `Migrating recipes for ${jarsNeedingRecipes.length} jars from item_types to batch-specific storage`,
       );
 
       // Group by batchId to ensure all jars in a batch get the same recipe
@@ -1228,7 +1228,7 @@ async function migrateRecipesFromItemTypesToJars(
       for (const [batchId, jarData] of batchGroups) {
         await database.runAsync(
           "UPDATE jars SET recipe = ?, recipe_image = ? WHERE batchId = ?",
-          [jarData.recipe, jarData.recipe_image, batchId]
+          [jarData.recipe, jarData.recipe_image, batchId],
         );
       }
 
@@ -1237,7 +1237,7 @@ async function migrateRecipesFromItemTypesToJars(
         if (!jar.batchId) {
           await database.runAsync(
             "UPDATE jars SET recipe = ?, recipe_image = ? WHERE id = ?",
-            [jar.recipe, jar.recipe_image, jar.jarId]
+            [jar.recipe, jar.recipe_image, jar.jarId],
           );
         }
       }
@@ -1272,7 +1272,7 @@ export async function seedDevelopmentData(): Promise<void> {
 
   // Check if data already exists
   const existingData = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM item_types"
+    "SELECT COUNT(*) as count FROM item_types",
   );
 
   if (existingData && existingData.count > 0) {
@@ -1334,7 +1334,7 @@ export async function seedDevelopmentData(): Promise<void> {
     for (const itemType of testItemTypes) {
       const result = await db.runAsync(
         "INSERT INTO item_types (name, category, recipe) VALUES (?, ?, ?)",
-        [itemType.name, itemType.category, itemType.recipe]
+        [itemType.name, itemType.category, itemType.recipe],
       );
 
       const itemTypeId = result.lastInsertRowId;
@@ -1376,7 +1376,7 @@ export async function seedDevelopmentData(): Promise<void> {
 
           await db.runAsync(
             "INSERT INTO jars (itemTypeId, fillDateISO, jarSize, location, used, batchId) VALUES (?, ?, ?, ?, ?, ?)",
-            [itemTypeId, fillDate, jarSize, location, used, batchId]
+            [itemTypeId, fillDate, jarSize, location, used, batchId],
           );
         }
       }
@@ -1394,7 +1394,7 @@ export async function getDateFormat(): Promise<DateFormat> {
   const database = await getDb();
   const result = await database.getFirstAsync<{ value: string }>(
     "SELECT value FROM app_settings WHERE key = ?",
-    ["dateFormat"]
+    ["dateFormat"],
   );
 
   if (result?.value && DATE_FORMATS.some((df) => df.value === result.value)) {
@@ -1409,7 +1409,7 @@ export async function setDateFormat(format: DateFormat): Promise<void> {
   const database = await getDb();
   await database.runAsync(
     "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-    ["dateFormat", format]
+    ["dateFormat", format],
   );
 }
 
@@ -1454,7 +1454,7 @@ export function formatDate(date: Date, format?: DateFormat): string {
 }
 
 export async function formatDateWithUserPreference(
-  date: Date
+  date: Date,
 ): Promise<string> {
   const userFormat = await getDateFormat();
   return formatDate(date, userFormat);
@@ -1462,14 +1462,14 @@ export async function formatDateWithUserPreference(
 
 export function formatDateString(
   dateString: string,
-  format?: DateFormat
+  format?: DateFormat,
 ): string {
   const date = new Date(dateString);
   return formatDate(date, format);
 }
 
 export async function formatDateStringWithUserPreference(
-  dateString: string
+  dateString: string,
 ): Promise<string> {
   const userFormat = await getDateFormat();
   return formatDateString(dateString, userFormat);
@@ -1493,7 +1493,7 @@ export async function getBatchRecipe(batchId: string): Promise<{
 export async function updateBatchRecipe(
   batchId: string,
   recipe?: string,
-  recipeImage?: string
+  recipeImage?: string,
 ): Promise<void> {
   const database = await getDb();
 
@@ -1505,7 +1505,7 @@ export async function updateBatchRecipe(
   if (batchInfo?.recipeId) {
     // Update the recipe in the recipes table
     console.log(
-      `updateBatchRecipe: Updating recipe ${batchInfo.recipeId} in recipes table`
+      `updateBatchRecipe: Updating recipe ${batchInfo.recipeId} in recipes table`,
     );
     await updateRecipe(batchInfo.recipeId, {
       content: recipe || "",
@@ -1515,23 +1515,23 @@ export async function updateBatchRecipe(
     // Also update the legacy fields for backward compatibility
     await database.runAsync(
       "UPDATE jars SET recipe = ?, recipe_image = ? WHERE batchId = ?",
-      [recipe ?? null, recipeImage ?? null, batchId]
+      [recipe ?? null, recipeImage ?? null, batchId],
     );
   } else {
     // No linked recipe, just update the legacy fields
     console.log(
-      `updateBatchRecipe: Updating legacy recipe fields for batch ${batchId}`
+      `updateBatchRecipe: Updating legacy recipe fields for batch ${batchId}`,
     );
     await database.runAsync(
       "UPDATE jars SET recipe = ?, recipe_image = ? WHERE batchId = ?",
-      [recipe ?? null, recipeImage ?? null, batchId]
+      [recipe ?? null, recipeImage ?? null, batchId],
     );
   }
 }
 
 // Recipe Management Functions
 export async function createRecipe(
-  recipe: Omit<Recipe, "id" | "created_date">
+  recipe: Omit<Recipe, "id" | "created_date">,
 ): Promise<number> {
   const database = await getDb();
   console.log("createRecipe: Creating recipe with data:", {
@@ -1542,7 +1542,7 @@ export async function createRecipe(
 
   const result = await database.runAsync(
     "INSERT INTO recipes (name, content, image, created_date) VALUES (?, ?, ?, datetime('now'))",
-    [recipe.name, recipe.content, recipe.image ?? null]
+    [recipe.name, recipe.content, recipe.image ?? null],
   );
 
   console.log("createRecipe: Created recipe with ID:", result.lastInsertRowId);
@@ -1556,7 +1556,7 @@ export async function getAllRecipes(): Promise<Recipe[]> {
   // Check if table exists
   try {
     const tableCheck = await database.getFirstAsync(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='recipes'"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='recipes'",
     );
     console.log("Recipes table exists:", !!tableCheck);
 
@@ -1578,7 +1578,7 @@ export async function getAllRecipes(): Promise<Recipe[]> {
   }
 
   const result = await database.getAllAsync<Recipe>(
-    "SELECT * FROM recipes ORDER BY last_used_date DESC, created_date DESC"
+    "SELECT * FROM recipes ORDER BY last_used_date DESC, created_date DESC",
   );
   console.log(
     "getAllRecipes: Found",
@@ -1588,7 +1588,7 @@ export async function getAllRecipes(): Promise<Recipe[]> {
       id: r.id,
       name: r.name,
       hasImage: !!r.image,
-    }))
+    })),
   );
   return result;
 }
@@ -1597,13 +1597,13 @@ export async function getRecipeById(id: number): Promise<Recipe | null> {
   const database = await getDb();
   return await database.getFirstAsync<Recipe>(
     "SELECT * FROM recipes WHERE id = ?",
-    [id]
+    [id],
   );
 }
 
 export async function updateRecipe(
   id: number,
-  recipe: Partial<Omit<Recipe, "id" | "created_date">>
+  recipe: Partial<Omit<Recipe, "id" | "created_date">>,
 ): Promise<void> {
   const database = await getDb();
   const fields = [];
@@ -1626,29 +1626,29 @@ export async function updateRecipe(
     values.push(id);
     await database.runAsync(
       `UPDATE recipes SET ${fields.join(", ")} WHERE id = ?`,
-      values
+      values,
     );
 
     // Also sync changes to legacy fields in all batches that reference this recipe
     console.log(
-      `updateRecipe: Syncing changes to recipe ${id} back to linked batches`
+      `updateRecipe: Syncing changes to recipe ${id} back to linked batches`,
     );
 
     // Get the updated recipe data
     const updatedRecipe = await database.getFirstAsync<Recipe>(
       "SELECT content, image FROM recipes WHERE id = ?",
-      [id]
+      [id],
     );
 
     if (updatedRecipe) {
       // Update legacy fields in all jars that reference this recipe
       const updateResult = await database.runAsync(
         "UPDATE jars SET recipe = ?, recipe_image = ? WHERE recipeId = ?",
-        [updatedRecipe.content, updatedRecipe.image, id]
+        [updatedRecipe.content, updatedRecipe.image, id],
       );
 
       console.log(
-        `updateRecipe: Updated legacy fields in ${updateResult.changes} batch records`
+        `updateRecipe: Updated legacy fields in ${updateResult.changes} batch records`,
       );
     }
   }
@@ -1656,21 +1656,46 @@ export async function updateRecipe(
 
 export async function deleteRecipe(id: number): Promise<void> {
   const database = await getDb();
+
+  // First, clear any legacy recipe fields in jars that reference this recipe
+  await database.runAsync(
+    "UPDATE jars SET recipe = NULL, recipe_image = NULL WHERE recipeId = ?",
+    [id],
+  );
+
+  // Then delete the recipe from the recipes table
+  // The recipeId will be set to NULL automatically due to the ON DELETE SET NULL constraint
   await database.runAsync("DELETE FROM recipes WHERE id = ?", [id]);
+}
+
+export async function deleteRecipeIfUnused(id: number): Promise<void> {
+  const database = await getDb();
+
+  // Check if the recipe is still being used by any batch
+  const usage = await database.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM jars WHERE recipeId = ?",
+    [id],
+  );
+
+  // If the recipe is not used anywhere, delete it
+  if (usage && usage.count === 0) {
+    await deleteRecipe(id);
+    console.log(`Deleted unused recipe ${id}`);
+  }
 }
 
 export async function updateRecipeLastUsed(id: number): Promise<void> {
   const database = await getDb();
   await database.runAsync(
     "UPDATE recipes SET last_used_date = datetime('now') WHERE id = ?",
-    [id]
+    [id],
   );
 }
 
 // Functions to use recipes with batches
 export async function setBatchRecipeById(
   batchId: string,
-  recipeId?: number
+  recipeId?: number,
 ): Promise<void> {
   const database = await getDb();
   if (recipeId) {
@@ -1715,7 +1740,7 @@ export async function getUniqueBatchRecipes(): Promise<
        AND j.recipe != ''
        AND j.recipeId IS NULL
      GROUP BY j.recipe, j.recipe_image
-     ORDER BY batchCount DESC, j.recipe`
+     ORDER BY batchCount DESC, j.recipe`,
   );
 
   // Get recipes from item_types table (old system) that haven't been used in jars yet
@@ -1736,7 +1761,7 @@ export async function getUniqueBatchRecipes(): Promise<
          WHERE r.content = it.recipe 
            AND (r.image = it.recipe_image OR (r.image IS NULL AND it.recipe_image IS NULL))
        )
-     ORDER BY it.name`
+     ORDER BY it.name`,
   );
 
   // Combine and format results
@@ -1757,7 +1782,7 @@ export async function importBatchRecipeToCollection(
   recipe: string,
   recipeImage: string | null,
   recipeName: string,
-  source: "jar" | "item_type" = "jar"
+  source: "jar" | "item_type" = "jar",
 ): Promise<number> {
   const database = await getDb();
   console.log("importBatchRecipeToCollection: Starting import with:", {
@@ -1770,25 +1795,25 @@ export async function importBatchRecipeToCollection(
   // Create the recipe in the collection
   const result = await database.runAsync(
     "INSERT INTO recipes (name, content, image, created_date) VALUES (?, ?, ?, datetime('now'))",
-    [recipeName, recipe, recipeImage]
+    [recipeName, recipe, recipeImage],
   );
 
   const recipeId = result.lastInsertRowId;
   console.log(
     "importBatchRecipeToCollection: Created recipe with ID:",
-    recipeId
+    recipeId,
   );
 
   if (source === "jar") {
     // Update all jars that have this recipe to reference the new recipe ID
     const updateResult = await database.runAsync(
       "UPDATE jars SET recipeId = ? WHERE recipe = ? AND (recipe_image = ? OR (recipe_image IS NULL AND ? IS NULL)) AND recipeId IS NULL",
-      [recipeId, recipe, recipeImage, recipeImage]
+      [recipeId, recipe, recipeImage, recipeImage],
     );
     console.log(
       "importBatchRecipeToCollection: Updated",
       updateResult.changes,
-      "jars to reference this recipe"
+      "jars to reference this recipe",
     );
   }
 
@@ -1808,7 +1833,7 @@ export async function getBatchRecipeInfo(batchId: string): Promise<{
     recipeId: number | null;
   }>(
     "SELECT recipe, recipe_image, recipeId FROM jars WHERE batchId = ? LIMIT 1",
-    [batchId]
+    [batchId],
   );
 
   if (!result) return null;
@@ -1824,55 +1849,34 @@ export async function getBatchRecipeInfo(batchId: string): Promise<{
   };
 }
 
-// Automatically migrate unique recipes from batches to the recipe collection
-async function autoMigrateRecipesToCollection(): Promise<void> {
-  console.log(
-    "autoMigrateRecipesToCollection: Starting automatic recipe migration..."
-  );
-
+// Clear all legacy recipe data permanently - we only use recipeId system now
+async function clearAllLegacyRecipeData(): Promise<void> {
   try {
-    // Get all unique batch recipes that haven't been migrated yet
-    const uniqueRecipes = await getUniqueBatchRecipes();
-    console.log(
-      `autoMigrateRecipesToCollection: Found ${uniqueRecipes.length} unique recipes to migrate`
+    const database = await getDb();
+
+    // Clear all legacy recipe fields from jars table permanently
+    const result = await database.runAsync(
+      "UPDATE jars SET recipe = NULL, recipe_image = NULL WHERE recipe IS NOT NULL OR recipe_image IS NOT NULL",
     );
 
-    for (const recipeData of uniqueRecipes) {
-      const { recipe, recipe_image, itemTypeName, source } = recipeData;
-
-      // Generate a recipe name from the item type name and content preview
-      const contentPreview = recipe.split("\n")[0].substring(0, 50);
-      const recipeName = `${itemTypeName} Recipe`;
-
+    if (result.changes > 0) {
       console.log(
-        `autoMigrateRecipesToCollection: Migrating recipe for "${itemTypeName}"`
+        `clearAllLegacyRecipeData: Cleared ${result.changes} legacy recipe entries`,
       );
-
-      try {
-        await importBatchRecipeToCollection(
-          recipe,
-          recipe_image,
-          recipeName,
-          source
-        );
-        console.log(
-          `autoMigrateRecipesToCollection: Successfully migrated "${recipeName}"`
-        );
-      } catch (error) {
-        console.error(
-          `autoMigrateRecipesToCollection: Error migrating "${recipeName}":`,
-          error
-        );
-        // Continue with other recipes even if one fails
-      }
     }
 
-    console.log("autoMigrateRecipesToCollection: Recipe migration completed");
-  } catch (error) {
-    console.error(
-      "autoMigrateRecipesToCollection: Error during automatic migration:",
-      error
+    // Also clear legacy recipe fields from item_types table
+    const itemTypeResult = await database.runAsync(
+      "UPDATE item_types SET recipe = NULL, recipe_image = NULL WHERE recipe IS NOT NULL OR recipe_image IS NOT NULL",
     );
-    // Don't throw - migration is best effort
+
+    if (itemTypeResult.changes > 0) {
+      console.log(
+        `clearAllLegacyRecipeData: Cleared ${itemTypeResult.changes} legacy recipe entries from item_types`,
+      );
+    }
+  } catch (error) {
+    console.error("clearAllLegacyRecipeData: Error during cleanup:", error);
+    // Don't throw - cleanup is best effort
   }
 }

@@ -41,6 +41,7 @@ import {
   createRecipe,
   updateRecipe,
   setBatchRecipeById,
+  deleteRecipeIfUnused,
   Recipe,
 } from "../db";
 import { theme } from "../theme";
@@ -116,7 +117,7 @@ export default function BatchDetailScreen() {
   const [recipeImage, setRecipeImage] = React.useState<string | null>(null);
   const [recipeName, setRecipeName] = React.useState("");
   const [selectedRecipe, setSelectedRecipe] = React.useState<Recipe | null>(
-    null
+    null,
   );
   const [showRecipeSelector, setShowRecipeSelector] = React.useState(false);
   const [showRecipeEditor, setShowRecipeEditor] = React.useState(false);
@@ -138,17 +139,17 @@ export default function BatchDetailScreen() {
   // Simulate error for testing ErrorBoundary (dev only)
   if (__DEV__ && shouldThrowError) {
     throw new Error(
-      "Test error for ErrorBoundary simulation - this should be caught!"
+      "Test error for ErrorBoundary simulation - this should be caught!",
     );
   }
 
   const loadData = React.useCallback(async () => {
     try {
-      console.log("Loading batch data with params:", {
-        itemTypeId,
-        fillDate,
-        batchId,
-      });
+      // console.log("Loading batch data with params:", {
+      //   itemTypeId,
+      //   fillDate,
+      //   batchId,
+      // });
       const db = await getDb();
 
       if (!db) {
@@ -156,17 +157,17 @@ export default function BatchDetailScreen() {
       }
 
       // Get item type details
-      console.log("Fetching item type for ID:", itemTypeId);
+      // console.log("Fetching item type for ID:", itemTypeId);
       const itemTypeData = await db.getFirstAsync<any>(
         "SELECT * FROM item_types WHERE id = ?",
-        [itemTypeId]
+        [itemTypeId],
       );
       // Log item type data without the large base64 image
       const { recipe_image, ...itemTypeDataForLog } = itemTypeData || {};
-      console.log("Item type data:", {
-        ...itemTypeDataForLog,
-        recipe_image: recipe_image ? "base64 image data present" : null,
-      });
+      // console.log("Item type data:", {
+      // ...itemTypeDataForLog,
+      // recipe_image: recipe_image ? "base64 image data present" : null,
+      // });
       setItemType(itemTypeData);
 
       // Load categories
@@ -189,7 +190,7 @@ export default function BatchDetailScreen() {
       // Check if batch has a linked recipe from recipes table
       const linkedRecipe = await db.getFirstAsync<{ recipeId: number | null }>(
         "SELECT recipeId FROM jars WHERE batchId = ? LIMIT 1",
-        [batchId]
+        [batchId],
       );
 
       if (linkedRecipe?.recipeId) {
@@ -216,14 +217,14 @@ export default function BatchDetailScreen() {
       setThresholdText((itemTypeData?.lowStockThreshold || 0).toString());
 
       // Get jars for this specific batch using batchId
-      console.log("Fetching jars for batch ID:", batchId);
+      // console.log("Fetching jars for batch ID:", batchId);
       const batchJars = await db.getAllAsync<JarWithDetails>(
         `SELECT * FROM jars 
          WHERE batchId = ?
          ORDER BY id ASC`,
-        [batchId]
+        [batchId],
       );
-      console.log("Found jars:", batchJars.length);
+      // console.log("Found jars:", batchJars.length);
 
       setJars(batchJars);
 
@@ -318,6 +319,8 @@ export default function BatchDetailScreen() {
 
   const clearSelectedRecipe = async () => {
     try {
+      const recipeIdToCheck = selectedRecipe?.id;
+
       setSelectedRecipe(null);
       setRecipeText("");
       setRecipeImage(null);
@@ -326,6 +329,11 @@ export default function BatchDetailScreen() {
       // Clear recipe from batch in database
       await setBatchRecipeById(batchId); // Pass undefined to clear
       await updateBatchRecipe(batchId, "", null); // Clear custom recipe text and image
+
+      // If there was a linked recipe, check if it's still used elsewhere
+      if (recipeIdToCheck) {
+        await deleteRecipeIfUnused(recipeIdToCheck);
+      }
     } catch (error) {
       console.error("Error clearing recipe:", error);
       Alert.alert("Error", "Failed to clear recipe");
@@ -341,7 +349,7 @@ export default function BatchDetailScreen() {
       if (permissionResult.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please allow access to your photo library to add recipe images."
+          "Please allow access to your photo library to add recipe images.",
         );
         return;
       }
@@ -378,7 +386,7 @@ export default function BatchDetailScreen() {
       if (permissionResult.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please allow access to your camera to take recipe photos."
+          "Please allow access to your camera to take recipe photos.",
         );
         return;
       }
@@ -434,7 +442,7 @@ export default function BatchDetailScreen() {
       const threshold = parseInt(thresholdText) || 0;
       await db.runAsync(
         "UPDATE item_types SET lowStockThreshold = ? WHERE id = ?",
-        [threshold, itemTypeId]
+        [threshold, itemTypeId],
       );
       setItemType((prev) => ({ ...prev, lowStockThreshold: threshold }));
       setIsEditingThreshold(false);
@@ -458,7 +466,7 @@ export default function BatchDetailScreen() {
       // Update all jars in this batch with new details
       await db.runAsync(
         "UPDATE jars SET jarSize = ?, location = ?, fillDateISO = ? WHERE batchId = ?",
-        [jarSizeText, locationText, dateCannedText, batchId]
+        [jarSizeText, locationText, dateCannedText, batchId],
       );
 
       // Reload the data to reflect changes
@@ -526,12 +534,12 @@ export default function BatchDetailScreen() {
               console.error("Error marking jar as used:", error);
               Alert.alert(
                 "Error",
-                `Failed to mark jar as used: ${error.message}`
+                `Failed to mark jar as used: ${error.message}`,
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -552,7 +560,7 @@ export default function BatchDetailScreen() {
                   Alert.alert(
                     "Batch Deleted",
                     "The batch is now empty and has been removed.",
-                    [{ text: "OK", onPress: () => navigation.goBack() }]
+                    [{ text: "OK", onPress: () => navigation.goBack() }],
                   );
                 } else {
                   await loadData();
@@ -565,7 +573,7 @@ export default function BatchDetailScreen() {
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -575,7 +583,7 @@ export default function BatchDetailScreen() {
       if (isNaN(quantity) || quantity < 1 || quantity > 50) {
         Alert.alert(
           "Invalid Quantity",
-          "Please enter a number between 1 and 50"
+          "Please enter a number between 1 and 50",
         );
         return;
       }
@@ -589,7 +597,7 @@ export default function BatchDetailScreen() {
         fillDate,
         quantity,
         currentJar?.jarSize,
-        currentJar?.location
+        currentJar?.location,
       );
 
       setShowAddJarModal(false);
@@ -597,7 +605,7 @@ export default function BatchDetailScreen() {
       await loadData();
       Alert.alert(
         "Success",
-        `Added ${quantity} jar${quantity > 1 ? "s" : ""} to the batch.`
+        `Added ${quantity} jar${quantity > 1 ? "s" : ""} to the batch.`,
       );
     } catch (error) {
       console.error("Error adding jars:", error);
@@ -644,7 +652,7 @@ export default function BatchDetailScreen() {
                     text: "OK",
                     onPress: () => navigation.goBack(),
                   },
-                ]
+                ],
               );
             } catch (error) {
               console.error("Error deleting batch:", error);
@@ -652,7 +660,7 @@ export default function BatchDetailScreen() {
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -798,9 +806,8 @@ export default function BatchDetailScreen() {
                           .split("T")[0];
                         setDateCannedText(formattedDate);
                         // Update the formatted display date
-                        const formatted = await formatDateWithUserPreference(
-                          selectedDate
-                        );
+                        const formatted =
+                          await formatDateWithUserPreference(selectedDate);
                         setFormattedFillDate(formatted);
                       }
                     }}

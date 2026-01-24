@@ -91,9 +91,9 @@ export default function HomeScreen() {
         batchData.map(async (batch) => ({
           ...batch,
           formattedFillDate: await formatDateStringWithUserPreference(
-            batch.fillDate
+            batch.fillDate,
           ),
-        }))
+        })),
       );
 
       setBatches(batchesWithFormattedDates);
@@ -108,7 +108,7 @@ export default function HomeScreen() {
         error?.message?.includes("shared object that was already released") ||
         error?.message?.includes("database is closed")
       ) {
-        console.log("Resetting database connection and retrying...");
+        // console.log("Resetting database connection and retrying...");
         resetDb();
         try {
           // Try one more time with fresh connection
@@ -125,9 +125,9 @@ export default function HomeScreen() {
             batchData.map(async (batch) => ({
               ...batch,
               formattedFillDate: await formatDateStringWithUserPreference(
-                batch.fillDate
+                batch.fillDate,
               ),
-            }))
+            })),
           );
 
           setBatches(batchesWithFormattedDates);
@@ -146,7 +146,7 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadData();
-    }, [])
+    }, []),
   );
 
   const filteredBatches = batches

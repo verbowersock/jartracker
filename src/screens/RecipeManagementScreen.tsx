@@ -64,7 +64,7 @@ export default function RecipeManagementScreen() {
   const filteredRecipes = recipes.filter(
     (recipe) =>
       recipe.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      recipe.content.toLowerCase().includes(searchQuery.toLowerCase())
+      recipe.content.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const openModal = (recipe?: Recipe) => {
@@ -144,7 +144,7 @@ export default function RecipeManagementScreen() {
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -155,7 +155,7 @@ export default function RecipeManagementScreen() {
     if (permissionResult.granted === false) {
       Alert.alert(
         "Permission Required",
-        "Please allow access to your photo library to add recipe images."
+        "Please allow access to your photo library to add recipe images.",
       );
       return;
     }
@@ -183,7 +183,7 @@ export default function RecipeManagementScreen() {
     if (permissionResult.granted === false) {
       Alert.alert(
         "Permission Required",
-        "Please allow access to your camera to take recipe photos."
+        "Please allow access to your camera to take recipe photos.",
       );
       return;
     }
@@ -275,9 +275,11 @@ export default function RecipeManagementScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Recipe Collection</Text>
-        <TouchableOpacity onPress={() => openModal()} style={styles.addButton}>
-          <Ionicons name="add" size={24} color="white" />
+        <TouchableOpacity
+          onPress={() => openModal()}
+          style={styles.addNewRecipeButton}
+        >
+          <Text style={styles.addNewRecipeText}>Add New Recipe</Text>
         </TouchableOpacity>
       </View>
 
@@ -304,11 +306,9 @@ export default function RecipeManagementScreen() {
               size={64}
               color={theme.colors.textSecondary}
             />
-            <Text style={styles.emptyText}>Loading recipes...</Text>
+            <Text style={styles.emptyText}>No recipes yet</Text>
             <Text style={styles.emptySubtext}>
-              If you have recipes in existing batches, those are being
-              automatically imported. You may need to restart the app to see
-              them all.
+              Create your first recipe by tapping the button above
             </Text>
           </View>
         )}
@@ -466,24 +466,21 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: theme.colors.text,
-  },
-  addButton: {
+  addNewRecipeButton: {
     backgroundColor: theme.colors.primary,
-    borderRadius: 25,
-    width: 50,
-    height: 50,
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  addNewRecipeText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "white",
   },
   searchContainer: {
     flexDirection: "row",

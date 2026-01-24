@@ -13,7 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "../theme";
-import packageJson from "../../package.json";
+import Constants from "expo-constants";
 import {
   getDateFormat,
   setDateFormat,
@@ -166,7 +166,7 @@ export default function SettingsScreen({ navigation }: any) {
             resizeMode="cover"
           />
           <Text style={styles.appName}>Jar Tracker</Text>
-          <Text style={styles.version}>Version {packageJson.version}</Text>
+          <Text style={styles.version}>Version {Constants.expoConfig?.version ?? ""}</Text>
         </View>
         <Text style={styles.description}>
           Keep track of your home-canned goods, preserves, and jarred items.

@@ -27,17 +27,17 @@ export default function BackupRestoreScreen() {
               await FileSystem.StorageAccessFramework.createFileAsync(
                 permissions.directoryUri,
                 fileName,
-                "application/json"
+                "application/json",
               );
             await FileSystem.writeAsStringAsync(fileUri, json);
             Alert.alert(
               "Backup Saved",
-              `Backup saved successfully as ${fileName}`
+              `Backup saved successfully as ${fileName}`,
             );
             return;
           }
         } catch (safError) {
-          console.log("SAF not available, falling back to sharing:", safError);
+          // console.log("SAF not available, falling back to sharing:", safError);
         }
       }
 
@@ -53,14 +53,14 @@ export default function BackupRestoreScreen() {
       } else {
         Alert.alert(
           "Backup Created",
-          `Backup created in app cache. Use the share button to save it permanently.`
+          `Backup created in app cache. Use the share button to save it permanently.`,
         );
       }
     } catch (error) {
       console.error("Backup failed:", error);
       Alert.alert(
         "Backup Failed",
-        "An error occurred while creating the backup."
+        "An error occurred while creating the backup.",
       );
     }
   };
