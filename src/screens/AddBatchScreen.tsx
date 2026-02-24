@@ -40,12 +40,16 @@ import {
   setBatchRecipeById,
 } from "../db";
 import { theme } from "../theme";
+import { usePremium } from "../hooks/usePremium";
+import PremiumUpgrade from "../components/PremiumUpgrade";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AddBatchScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
+  const { isPremium } = usePremium();
+  const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
   const [selectedItemType, setSelectedItemType] =
     React.useState<ItemType | null>(null);
   const [newItemTypeName, setNewItemTypeName] = React.useState("");
@@ -53,7 +57,7 @@ export default function AddBatchScreen() {
   const [recipeName, setRecipeName] = React.useState("");
   const [recipeImage, setRecipeImage] = React.useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = React.useState<Recipe | null>(
-    null
+    null,
   );
   const [showRecipeSelector, setShowRecipeSelector] = React.useState(false);
   const [showRecipeEditor, setShowRecipeEditor] = React.useState(false);
@@ -73,7 +77,7 @@ export default function AddBatchScreen() {
   const [showCategoryModal, setShowCategoryModal] = React.useState(false);
   const [showJarSizeModal, setShowJarSizeModal] = React.useState(false);
   const [existingItemTypes, setExistingItemTypes] = React.useState<ItemType[]>(
-    []
+    [],
   );
   const [categories, setCategories] = React.useState<CustomCategory[]>([]);
   const [jarSizes, setJarSizes] = React.useState<CustomJarSize[]>([]);
@@ -98,7 +102,7 @@ export default function AddBatchScreen() {
     const [itemTypes, categoriesData, jarSizesData, recipesData] =
       await Promise.all([
         db.getAllAsync<ItemType>(
-          "SELECT * FROM item_types ORDER BY name COLLATE NOCASE"
+          "SELECT * FROM item_types ORDER BY name COLLATE NOCASE",
         ),
         getAllCategories(),
         getAllJarSizes(),
@@ -111,7 +115,7 @@ export default function AddBatchScreen() {
   };
 
   const filteredItemTypes = existingItemTypes.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const onSelectExistingItemType = (itemType: ItemType) => {
@@ -147,7 +151,7 @@ export default function AddBatchScreen() {
       if (permissionResult.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please allow access to your photo library to add recipe images."
+          "Please allow access to your photo library to add recipe images.",
         );
         return;
       }
@@ -184,7 +188,7 @@ export default function AddBatchScreen() {
       if (permissionResult.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please allow access to your camera to take recipe photos."
+          "Please allow access to your camera to take recipe photos.",
         );
         return;
       }
@@ -277,7 +281,7 @@ export default function AddBatchScreen() {
     if (isNaN(qty) || qty < 1 || qty > 100) {
       Alert.alert(
         "Invalid Quantity",
-        "Please enter a number between 1 and 100"
+        "Please enter a number between 1 and 100",
       );
       return;
     }
@@ -360,7 +364,7 @@ export default function AddBatchScreen() {
       isoDate,
       qty,
       jarSize,
-      location.trim() || undefined
+      location.trim() || undefined,
     );
 
     // Handle recipe creation/linking if we have recipe content
@@ -399,7 +403,7 @@ export default function AddBatchScreen() {
             });
           },
         },
-      ]
+      ],
     );
   };
 
@@ -424,12 +428,12 @@ export default function AddBatchScreen() {
                 <View style={styles.selectedItemTypeCategory}>
                   <Text style={styles.categoryIcon}>
                     {categories.find(
-                      (c) => c.name === selectedItemType.category
+                      (c) => c.name === selectedItemType.category,
                     )?.icon || "📦"}
                   </Text>
                   <Text style={styles.selectedItemTypeCategoryText}>
                     {categories.find(
-                      (c) => c.name === selectedItemType.category
+                      (c) => c.name === selectedItemType.category,
                     )?.name || selectedItemType.category}
                   </Text>
                 </View>
@@ -600,7 +604,7 @@ export default function AddBatchScreen() {
               setRecipeName(
                 `${
                   selectedItemType?.name || newItemTypeName || "Custom"
-                } Recipe`
+                } Recipe`,
               );
               setRecipe("");
               setRecipeImage(null);
@@ -628,22 +632,49 @@ export default function AddBatchScreen() {
       />
 
       {/* Low Stock Threshold */}
-      <Text style={styles.label}>Low Stock Alert Threshold</Text>
-      <TextInput
-        style={styles.input}
-        value={lowStockThreshold}
-        onChangeText={(text) => {
-          // Only allow numbers
-          const numericText = text.replace(/[^0-9]/g, "");
-          setLowStockThreshold(numericText);
-        }}
-        placeholder="Set the amount to be alerted about"
-        keyboardType="numeric"
-      />
-      <Text style={styles.helperText}>
-        Set the amount to be alerted about when available jars fall below this
-        number
-      </Text>
+      <View>
+        <View style={styles.labelRow}>
+          <Text style={styles.labelText}>Low Stock Alert Threshold</Text>
+          {!isPremium && (
+            <View style={styles.premiumBadge}>
+              <Ionicons name="star" size={12} color="white" />
+              <Text style={styles.premiumBadgeText}>Premium</Text>
+            </View>
+          )}
+        </View>
+        <TouchableOpacity
+          onPress={() => !isPremium && setShowUpgradeModal(true)}
+          activeOpacity={isPremium ? 1 : 0.6}
+        >
+          <TextInput
+            style={[styles.input, !isPremium && styles.disabledInput]}
+            value={lowStockThreshold}
+            onChangeText={(text) => {
+              if (!isPremium) {
+                setShowUpgradeModal(true);
+                return;
+              }
+              // Only allow numbers
+              const numericText = text.replace(/[^0-9]/g, "");
+              setLowStockThreshold(numericText);
+            }}
+            placeholder="Set the amount to be alerted about"
+            keyboardType="numeric"
+            editable={isPremium}
+          />
+        </TouchableOpacity>
+        {!isPremium && (
+          <Text style={styles.premiumFeatureText}>
+            Upgrade to Premium to enable low stock alerts
+          </Text>
+        )}
+        {isPremium && (
+          <Text style={styles.helperText}>
+            Set the amount to be alerted about when available jars fall below
+            this number
+          </Text>
+        )}
+      </View>
 
       <TouchableOpacity style={styles.saveButton} onPress={validateAndSave}>
         <Text style={styles.saveButtonText}>Add Batch</Text>
@@ -795,7 +826,8 @@ export default function AddBatchScreen() {
               {searchQuery.trim() &&
                 !existingItemTypes.some(
                   (item) =>
-                    item.name.toLowerCase() === searchQuery.trim().toLowerCase()
+                    item.name.toLowerCase() ===
+                    searchQuery.trim().toLowerCase(),
                 ) && (
                   <TouchableOpacity
                     style={[styles.itemTypeRow, styles.createNewRow]}
@@ -987,6 +1019,12 @@ export default function AddBatchScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Premium Upgrade Modal */}
+      <PremiumUpgrade
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </ScrollView>
   );
 }
@@ -1015,6 +1053,11 @@ const styles = StyleSheet.create({
   label: {
     marginTop: theme.spacing.lg,
     marginBottom: theme.spacing.sm,
+    fontWeight: theme.fontWeight.semibold,
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+  },
+  labelText: {
     fontWeight: theme.fontWeight.semibold,
     fontSize: theme.fontSize.md,
     color: theme.colors.text,
@@ -1505,5 +1548,38 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.md,
+  },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  premiumBadge: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 2,
+    borderRadius: theme.borderRadius.sm,
+    alignItems: "center",
+    gap: 4,
+    marginLeft: theme.spacing.sm,
+  },
+  premiumBadgeText: {
+    color: "white",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  disabledInput: {
+    backgroundColor: theme.colors.background,
+    opacity: 0.6,
+  },
+  premiumFeatureText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
+    fontWeight: theme.fontWeight.medium,
   },
 });

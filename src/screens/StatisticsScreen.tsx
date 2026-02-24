@@ -13,6 +13,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { getDb, getAllCategories, type CustomCategory } from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { usePremium } from "../hooks/usePremium";
+import PremiumUpgrade from "../components/PremiumUpgrade";
 
 type YearlyStats = {
   year: number;
@@ -56,7 +58,7 @@ const getCategoryName = (categoryId: string, categories: CustomCategory[]) => {
 
 const formatJarSizes = (
   sizeCounts?: { [jarSize: string]: number },
-  detailed: boolean = false
+  detailed: boolean = false,
 ) => {
   if (!sizeCounts || Object.keys(sizeCounts).length === 0) {
     return null;
@@ -80,6 +82,7 @@ const formatJarSizes = (
 };
 
 export default function StatisticsScreen() {
+  const { isPremium } = usePremium();
   const [yearlyStats, setYearlyStats] = React.useState<YearlyStats[]>([]);
   const [categoryStats, setCategoryStats] = React.useState<CategoryStats[]>([]);
   const [cannedCategoryStats, setCannedCategoryStats] = React.useState<
@@ -94,14 +97,15 @@ export default function StatisticsScreen() {
     Set<string>
   >(new Set());
   const [expandedItemTypes, setExpandedItemTypes] = React.useState<Set<number>>(
-    new Set()
+    new Set(),
   );
   const [monthlyStats, setMonthlyStats] = React.useState<MonthlyStats[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [selectedYear, setSelectedYear] = React.useState(
-    new Date().getFullYear()
+    new Date().getFullYear(),
   );
+  const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
 
   const loadStatistics = React.useCallback(async () => {
     try {
@@ -141,7 +145,7 @@ export default function StatisticsScreen() {
       // Ensure current year is always available for selection even with no data
       const currentYear = new Date().getFullYear();
       const hasCurrentYear = yearlyData.some(
-        (stat) => stat.year === currentYear
+        (stat) => stat.year === currentYear,
       );
 
       if (!hasCurrentYear) {
@@ -172,7 +176,7 @@ export default function StatisticsScreen() {
         GROUP BY it.category
         ORDER BY totalCanned DESC
       `,
-        [selectedYear.toString()]
+        [selectedYear.toString()],
       );
 
       const usedCategoryData = await db.getAllAsync<CategoryStats>(
@@ -187,7 +191,7 @@ export default function StatisticsScreen() {
         GROUP BY it.category
         ORDER BY totalUsed DESC
       `,
-        [selectedYear.toString()]
+        [selectedYear.toString()],
       );
 
       const cannedStatsWithNames = cannedCategoryData.map((stat) => ({
@@ -216,7 +220,7 @@ export default function StatisticsScreen() {
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
-          [category.category, selectedYear.toString()]
+          [category.category, selectedYear.toString()],
         );
 
         category.sizeCounts = {};
@@ -243,7 +247,7 @@ export default function StatisticsScreen() {
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
-          [category.category, selectedYear.toString()]
+          [category.category, selectedYear.toString()],
         );
 
         category.sizeCounts = {};
@@ -286,7 +290,7 @@ export default function StatisticsScreen() {
         WHERE COALESCE(canned.totalCanned, 0) > 0 OR COALESCE(used.totalUsed, 0) > 0
         ORDER BY COALESCE(canned.totalCanned, 0) + COALESCE(used.totalUsed, 0) DESC
       `,
-        [selectedYear.toString(), selectedYear.toString()]
+        [selectedYear.toString(), selectedYear.toString()],
       );
 
       // Load jar size breakdown for each item type - both canned and used
@@ -305,7 +309,7 @@ export default function StatisticsScreen() {
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
-          [itemType.id, selectedYear.toString()]
+          [itemType.id, selectedYear.toString()],
         );
 
         // Get sizes for items used in this year
@@ -322,7 +326,7 @@ export default function StatisticsScreen() {
           GROUP BY j.jarSize
           ORDER BY count DESC
         `,
-          [itemType.id, selectedYear.toString()]
+          [itemType.id, selectedYear.toString()],
         );
 
         // Combine size data from both canned and used
@@ -354,7 +358,7 @@ export default function StatisticsScreen() {
         GROUP BY strftime('%Y-%m', j.usedDateISO)
         ORDER BY month
       `,
-        [selectedYear.toString()]
+        [selectedYear.toString()],
       );
       setMonthlyStats(monthlyData);
     } catch (error) {
@@ -372,7 +376,7 @@ export default function StatisticsScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadStatistics();
-    }, [loadStatistics])
+    }, [loadStatistics]),
   );
 
   const onRefresh = React.useCallback(async () => {
@@ -382,7 +386,7 @@ export default function StatisticsScreen() {
   }, [loadStatistics]);
 
   const currentYearStats = yearlyStats.find(
-    (stat) => stat.year === selectedYear
+    (stat) => stat.year === selectedYear,
   );
 
   const toggleCategory = async (category: string) => {
@@ -434,6 +438,45 @@ export default function StatisticsScreen() {
       <View style={[styles.container, styles.centered]}>
         <Text>Loading statistics...</Text>
       </View>
+    );
+  }
+
+  if (!isPremium) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+        <View style={styles.premiumLockedContainer}>
+          <Ionicons
+            name="lock-closed"
+            size={80}
+            color={theme.colors.primary}
+            style={styles.lockIcon}
+          />
+          <Text style={styles.premiumLockedTitle}>Advanced Analytics</Text>
+          <Text style={styles.premiumLockedSubtitle}>
+            View detailed statistics and trends
+          </Text>
+          <Text style={styles.premiumLockedDescription}>
+            Upgrade to Premium to access comprehensive analytics about your
+            canning activity.
+          </Text>
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => setShowUpgradeModal(true)}
+          >
+            <Ionicons
+              name="star"
+              size={20}
+              color="white"
+              style={styles.upgradeButtonIcon}
+            />
+            <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+          </TouchableOpacity>
+        </View>
+        <PremiumUpgrade
+          visible={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+        />
+      </SafeAreaView>
     );
   }
 
@@ -519,7 +562,7 @@ export default function StatisticsScreen() {
           ) : (
             cannedCategoryStats.map((category) => {
               const isExpanded = expandedCategories.has(
-                `canned-${category.category}`
+                `canned-${category.category}`,
               );
               const itemTypes = getItemTypesForCategory(category.category);
 
@@ -642,7 +685,7 @@ export default function StatisticsScreen() {
           ) : (
             usedCategoryStats.map((category) => {
               const isExpanded = expandedCategories.has(
-                `used-${category.category}`
+                `used-${category.category}`,
               );
               const itemTypes = getItemTypesForCategory(category.category);
 
@@ -1257,5 +1300,52 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+  },
+  premiumLockedContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.lg,
+  },
+  lockIcon: {
+    marginBottom: theme.spacing.lg,
+  },
+  premiumLockedTitle: {
+    fontSize: theme.fontSize.xl,
+    fontWeight: "bold",
+    color: theme.colors.primary,
+    marginBottom: theme.spacing.sm,
+    textAlign: "center",
+  },
+  premiumLockedSubtitle: {
+    fontSize: theme.fontSize.md,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
+    textAlign: "center",
+  },
+  premiumLockedDescription: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.lg,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  upgradeButton: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.accent,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: theme.spacing.lg,
+  },
+  upgradeButtonIcon: {
+    marginRight: theme.spacing.sm,
+  },
+  upgradeButtonText: {
+    color: "white",
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
   },
 });

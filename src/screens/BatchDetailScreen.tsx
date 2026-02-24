@@ -24,6 +24,7 @@ import type { RootStackParamList } from "../App";
 import {
   getDb,
   markJarUsed,
+  setJarUsedDate,
   getAllCategories,
   getAllJarSizes,
   deleteJarWithBatchCheck,
@@ -46,6 +47,8 @@ import {
 } from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { usePremium } from "../hooks/usePremium";
+import PremiumUpgrade from "../components/PremiumUpgrade";
 
 type Route = RouteProp<RootStackParamList, "BatchDetail">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -56,6 +59,10 @@ type JarWithDetails = {
   jarSize?: string;
   location?: string;
   fillDateISO: string;
+  usedDateISO?: string;
+  batchId?: string;
+  itemTypeId: number;
+  recipeId?: number;
 };
 
 const getCategoryIcon = (categoryId: string, categories: CustomCategory[]) => {
@@ -78,6 +85,8 @@ const getCategoryColor = (categoryId: string) => {
 export default function BatchDetailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
+  const { isPremium } = usePremium();
+  const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
   const { batchName, itemTypeId, fillDate, batchId } = route.params;
 
   // Validate required parameters
@@ -135,6 +144,13 @@ export default function BatchDetailScreen() {
   const [showJarSizeModal, setShowJarSizeModal] = React.useState(false);
   const [showCategoryModal, setShowCategoryModal] = React.useState(false);
   const [shouldThrowError, setShouldThrowError] = React.useState(false);
+  const [showUsedDatePicker, setShowUsedDatePicker] = React.useState(false);
+  const [usedDatePickerJarId, setUsedDatePickerJarId] = React.useState<
+    number | null
+  >(null);
+  const [isMarkingAsUsed, setIsMarkingAsUsed] = React.useState(false);
+  const [usedDateObject, setUsedDateObject] = React.useState(new Date());
+  const [formattedUsedDate, setFormattedUsedDate] = React.useState("");
 
   // Simulate error for testing ErrorBoundary (dev only)
   if (__DEV__ && shouldThrowError) {
@@ -142,6 +158,43 @@ export default function BatchDetailScreen() {
       "Test error for ErrorBoundary simulation - this should be caught!",
     );
   }
+
+  const [formattedUsedDates, setFormattedUsedDates] = React.useState<{
+    [jarId: number]: string;
+  }>({});
+
+  // Format used dates for display
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const formatUsedDates = async () => {
+      if (!jars || jars.length === 0) return;
+
+      const formatted: { [jarId: number]: string } = {};
+      for (const jar of jars) {
+        if (jar.usedDateISO) {
+          try {
+            formatted[jar.id] = await formatDateStringWithUserPreference(
+              jar.usedDateISO,
+            );
+          } catch (error) {
+            console.error("Error formatting date:", error);
+            formatted[jar.id] = jar.usedDateISO;
+          }
+        }
+      }
+
+      if (isMounted) {
+        setFormattedUsedDates(formatted);
+      }
+    };
+
+    formatUsedDates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [jars]);
 
   const loadData = React.useCallback(async () => {
     try {
@@ -512,7 +565,22 @@ export default function BatchDetailScreen() {
     return text;
   };
 
-  const handleMarkUsed = async (jarId: number) => {
+  const handleMarkUsed = async (jarId: number, usedDate?: string) => {
+    const jarIndex = jars.findIndex((j) => j.id === jarId);
+    if (jarIndex === -1) return;
+
+    // If no date provided, show date picker for user to select
+    if (!usedDate) {
+      setUsedDatePickerJarId(jarId);
+      setIsMarkingAsUsed(true);
+      setUsedDateObject(new Date());
+      const formatted = await formatDateWithUserPreference(new Date());
+      setFormattedUsedDate(formatted);
+      setShowUsedDatePicker(true);
+      return;
+    }
+
+    // If date provided, mark as used with that date
     Alert.alert(
       "Mark Jar as Used",
       "Are you sure you want to mark this jar as used?",
@@ -523,7 +591,7 @@ export default function BatchDetailScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              const result = await markJarUsed(jarId);
+              const result = await markJarUsed(jarId, usedDate);
               if (result.success) {
                 await loadData();
                 Alert.alert("Success", result.message);
@@ -546,7 +614,7 @@ export default function BatchDetailScreen() {
   const handleRemoveJar = async (jarId: number, jarIndex: number) => {
     Alert.alert(
       "Remove Jar",
-      `Are you sure you want to remove Jar #${jarIndex + 1} from this batch?`,
+      `Are you sure you want to remove Jar ID ${jarId} from this batch?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1035,32 +1103,35 @@ export default function BatchDetailScreen() {
 
         {/* Low Stock Threshold */}
         <View style={styles.modalSection}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: theme.spacing.md,
-            }}
-          >
-            <Text style={styles.modalSectionTitle}>Low Stock Alert</Text>
-            <TouchableOpacity
-              onPress={() => {
-                if (isEditingThreshold) {
-                  saveThreshold();
-                } else {
-                  setIsEditingThreshold(true);
-                }
-              }}
-            >
-              <Ionicons
-                name={
-                  isEditingThreshold ? "checkmark-outline" : "create-outline"
-                }
-                size={20}
-                color={theme.colors.primary}
-              />
-            </TouchableOpacity>
+          <View style={styles.lowStockHeader}>
+            <View style={styles.lowStockTitleRow}>
+              <Text style={styles.lowStockTitle}>Low Stock Alert</Text>
+              {!isPremium && (
+                <View style={styles.premiumBadge}>
+                  <Ionicons name="star" size={12} color="white" />
+                  <Text style={styles.premiumBadgeText}>Premium</Text>
+                </View>
+              )}
+            </View>
+            {isPremium && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (isEditingThreshold) {
+                    saveThreshold();
+                  } else {
+                    setIsEditingThreshold(true);
+                  }
+                }}
+              >
+                <Ionicons
+                  name={
+                    isEditingThreshold ? "checkmark-outline" : "create-outline"
+                  }
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
           {isEditingThreshold ? (
             <View>
@@ -1068,22 +1139,40 @@ export default function BatchDetailScreen() {
                 style={styles.editableInput}
                 value={thresholdText}
                 onChangeText={(text) => {
+                  if (!isPremium) {
+                    setShowUpgradeModal(true);
+                    return;
+                  }
                   // Only allow numbers
                   const numericText = text.replace(/[^0-9]/g, "");
                   setThresholdText(numericText);
                 }}
                 placeholder="Set the amount to be alerted about"
                 keyboardType="numeric"
+                editable={isPremium}
               />
-              <Text style={styles.helperText}>
-                Set the amount to be alerted about when available jars fall
-                below this number
-              </Text>
+              {!isPremium && (
+                <Text style={styles.premiumFeatureText}>
+                  Upgrade to Premium to enable low stock alerts
+                </Text>
+              )}
+              {isPremium && (
+                <Text style={styles.helperText}>
+                  Set the amount to be alerted about when available jars fall
+                  below this number
+                </Text>
+              )}
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.modalNotesBox}
-              onPress={() => setIsEditingThreshold(true)}
+              style={[styles.modalNotesBox, !isPremium && styles.disabledBox]}
+              onPress={() => {
+                if (!isPremium) {
+                  setShowUpgradeModal(true);
+                } else {
+                  setIsEditingThreshold(true);
+                }
+              }}
             >
               <Text style={styles.modalNotesText}>
                 {(itemType?.lowStockThreshold || 0) > 0
@@ -1175,7 +1264,40 @@ export default function BatchDetailScreen() {
                 renderItem={({ item, index }) => (
                   <View key={item.id} style={styles.jarCard}>
                     <View style={styles.jarHeader}>
-                      <Text style={styles.jarNumber}>Jar #{index + 1}</Text>
+                      <View style={styles.jarHeaderLeft}>
+                        <Text style={styles.jarNumber}>Jar ID: {item.id}</Text>
+                        {item.used && item.usedDateISO ? (
+                          <TouchableOpacity
+                            onPress={async () => {
+                              try {
+                                const formatted =
+                                  formattedUsedDates[item.id] ||
+                                  (await formatDateStringWithUserPreference(
+                                    item.usedDateISO || "",
+                                  ));
+                                setUsedDatePickerJarId(item.id);
+                                setUsedDateObject(
+                                  new Date(item.usedDateISO || ""),
+                                );
+                                setFormattedUsedDate(formatted);
+                                setShowUsedDatePicker(true);
+                              } catch (error) {
+                                console.error(
+                                  "Error handling used date:",
+                                  error,
+                                );
+                              }
+                            }}
+                          >
+                            <Text style={styles.jarUsedDate}>
+                              Used:{" "}
+                              {String(
+                                formattedUsedDates[item.id] || "Loading...",
+                              )}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
                       <View style={styles.jarStatus}>
                         <Text
                           style={[
@@ -1187,6 +1309,31 @@ export default function BatchDetailScreen() {
                         </Text>
                       </View>
                     </View>
+
+                    {item.used && !item.usedDateISO ? (
+                      <TouchableOpacity
+                        style={styles.setUsedDateBtn}
+                        onPress={async () => {
+                          try {
+                            setUsedDatePickerJarId(item.id);
+                            setUsedDateObject(new Date());
+                            const formatted =
+                              await formatDateWithUserPreference(new Date());
+                            setFormattedUsedDate(formatted);
+                            setShowUsedDatePicker(true);
+                          } catch (error) {
+                            console.error("Error setting used date:", error);
+                          }
+                        }}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.actionBtnText}>Set Used Date</Text>
+                      </TouchableOpacity>
+                    ) : null}
 
                     <View style={styles.jarActions}>
                       <TouchableOpacity
@@ -1539,6 +1686,135 @@ export default function BatchDetailScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Used Date Picker - Only show for iOS */}
+      {Platform.OS === "ios" && showUsedDatePicker && (
+        <Modal
+          visible={showUsedDatePicker}
+          animationType="slide"
+          transparent
+          onRequestClose={() => {
+            setShowUsedDatePicker(false);
+            setUsedDatePickerJarId(null);
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <SafeAreaView style={styles.iosDatePickerContainer}>
+              <View style={styles.usedDateModalHeader}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowUsedDatePicker(false);
+                    setUsedDatePickerJarId(null);
+                  }}
+                >
+                  <Text style={styles.modalCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Set Used Date</Text>
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (usedDatePickerJarId !== null) {
+                      try {
+                        const usedDateISO = usedDateObject.toISOString();
+                        let result;
+
+                        if (isMarkingAsUsed) {
+                          // Mark jar as used with the selected date
+                          result = await markJarUsed(usedDatePickerJarId, usedDateISO);
+                        } else {
+                          // Update existing used date
+                          result = await setJarUsedDate(usedDatePickerJarId, usedDateISO);
+                        }
+
+                        if (result.success) {
+                          await loadData();
+                          setShowUsedDatePicker(false);
+                          setUsedDatePickerJarId(null);
+                          setIsMarkingAsUsed(false);
+                          Alert.alert("Success", result.message);
+                        } else {
+                          Alert.alert("Error", result.message);
+                        }
+                      } catch (error) {
+                        console.error("Error:", error);
+                        Alert.alert(
+                          "Error",
+                          `Failed: ${error.message}`,
+                        );
+                      }
+                    }
+                  }}
+                >
+                  <Text style={styles.modalCancel}>Done</Text>
+                </TouchableOpacity>
+              </View>
+
+              <DateTimePicker
+                value={usedDateObject}
+                mode="date"
+                display="spinner"
+                onChange={async (event, selectedDate) => {
+                  if (selectedDate) {
+                    setUsedDateObject(selectedDate);
+                    const formatted =
+                      await formatDateWithUserPreference(selectedDate);
+                    setFormattedUsedDate(formatted);
+                  }
+                }}
+              />
+            </SafeAreaView>
+          </View>
+        </Modal>
+      )}
+
+      {/* Used Date Picker - Android shows native dialog */}
+      {Platform.OS === "android" && showUsedDatePicker && (
+        <DateTimePicker
+          value={usedDateObject}
+          mode="date"
+          display="default"
+          onChange={async (event, selectedDate) => {
+            setShowUsedDatePicker(false);
+            if (selectedDate && usedDatePickerJarId !== null) {
+              try {
+                const usedDateISO = selectedDate.toISOString();
+                let result;
+
+                if (isMarkingAsUsed) {
+                  // Mark jar as used with the selected date
+                  result = await markJarUsed(usedDatePickerJarId, usedDateISO);
+                } else {
+                  // Update existing used date
+                  result = await setJarUsedDate(
+                    usedDatePickerJarId,
+                    usedDateISO,
+                  );
+                }
+
+                if (result.success) {
+                  await loadData();
+                  setUsedDatePickerJarId(null);
+                  setIsMarkingAsUsed(false);
+                  Alert.alert("Success", result.message);
+                } else {
+                  Alert.alert("Error", result.message);
+                }
+              } catch (error) {
+                console.error("Error setting used date:", error);
+                Alert.alert(
+                  "Error",
+                  `Failed to set used date: ${error.message}`,
+                );
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Premium Upgrade Modal */}
+      <PremiumUpgrade
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1589,13 +1865,23 @@ const styles = StyleSheet.create({
   jarHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 12,
+  },
+  jarHeaderLeft: {
+    flex: 1,
   },
   jarNumber: {
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
+    marginBottom: 4,
+  },
+  jarUsedDate: {
+    fontSize: 13,
+    color: theme.colors.primary,
+    fontWeight: "500",
+    textDecorationLine: "underline",
   },
   jarStatus: {
     paddingHorizontal: 8,
@@ -1623,6 +1909,17 @@ const styles = StyleSheet.create({
   jarActions: {
     flexDirection: "row",
     gap: 8,
+  },
+  setUsedDateBtn: {
+    backgroundColor: "#4CAF50",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginVertical: 8,
   },
   actionBtn: {
     backgroundColor: "#007AFF",
@@ -1987,6 +2284,30 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     padding: theme.spacing.lg,
   },
+  datePickerContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: theme.spacing.lg,
+  },
+  iosDatePickerContainer: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  usedDateModalContainer: {
+    flex: 1,
+    backgroundColor: "white",
+  },
+  usedDateModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2202,5 +2523,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     borderRadius: theme.borderRadius.md,
+  },
+  premiumBadge: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 2,
+    borderRadius: theme.borderRadius.sm,
+    alignItems: "center",
+    gap: 4,
+  },
+  premiumBadgeText: {
+    color: "white",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
+  },
+  disabledBox: {
+    opacity: 0.6,
+  },
+  premiumFeatureText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.primary,
+    marginTop: theme.spacing.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  lowStockHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  lowStockTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  lowStockTitle: {
+    fontSize: theme.fontSize.lg,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
   },
 });

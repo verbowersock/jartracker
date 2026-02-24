@@ -15,6 +15,7 @@ export type Jar = {
   itemTypeId: number;
   fillDateISO: string; // ISO string
   used: 0 | 1; // 0 false, 1 true
+  usedDateISO?: string; // ISO string - when jar was marked as used
   jarSize?: string;
   location?: string;
   batchId?: string; // Unique identifier for the batch
@@ -199,6 +200,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Check if category and recipe_image columns exist in item_types
       const itemTypesInfo = await db.getAllAsync(
         "PRAGMA table_info(item_types)",
+        [],
       );
       const hasCategoryColumn = itemTypesInfo.some(
         (col: any) => col.name === "category",
@@ -225,7 +227,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       }
 
       // Check if jarSize, location, batchId, recipe, and recipe_image columns exist in jars
-      const jarsInfo = await db.getAllAsync("PRAGMA table_info(jars)");
+      const jarsInfo = await db.getAllAsync("PRAGMA table_info(jars)", []);
       const hasJarSizeColumn = jarsInfo.some(
         (col: any) => col.name === "jarSize",
       );
@@ -269,6 +271,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Add usedDateISO column for tracking when jars were used
       const usedDateColumns = await db.getAllAsync<{ name: string }>(
         "PRAGMA table_info(jars);",
+        [],
       );
       if (!usedDateColumns.some((col) => col.name === "usedDateISO")) {
         await db.execAsync("ALTER TABLE jars ADD COLUMN usedDateISO TEXT;");
@@ -289,6 +292,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       // Check if hidden column exists in custom_jar_sizes
       const jarSizesInfo = await db.getAllAsync(
         "PRAGMA table_info(custom_jar_sizes)",
+        [],
       );
       const hasHiddenColumn = jarSizesInfo.some(
         (col: any) => col.name === "hidden",
@@ -366,6 +370,7 @@ async function migrateExistingCategories(): Promise<void> {
   // Get all unique categories currently used in item_types
   const existingCategories = await database.getAllAsync<{ category: string }>(
     "SELECT DISTINCT category FROM item_types WHERE category IS NOT NULL AND category != ''",
+    [],
   );
 
   // Map old category IDs to proper names
@@ -660,31 +665,35 @@ export async function upsertItemType(itemType: ItemType): Promise<number> {
   if (itemType.id) {
     await database.runAsync(
       "UPDATE item_types SET name = ?, category = ?, recipe = ?, notes = ?, recipe_image = ?, lowStockThreshold = ? WHERE id = ?",
+      [
+        itemType.name,
+        itemType.category ?? null,
+        itemType.recipe ?? null,
+        itemType.notes ?? null,
+        itemType.recipe_image ?? null,
+        itemType.lowStockThreshold ?? 0,
+        itemType.id,
+      ],
+    );
+    return itemType.id;
+  }
+  const res = await database.runAsync(
+    "INSERT INTO item_types (name, category, recipe, notes, recipe_image, lowStockThreshold) VALUES (?, ?, ?, ?, ?, ?)",
+    [
       itemType.name,
       itemType.category ?? null,
       itemType.recipe ?? null,
       itemType.notes ?? null,
       itemType.recipe_image ?? null,
       itemType.lowStockThreshold ?? 0,
-      itemType.id,
-    );
-    return itemType.id;
-  }
-  const res = await database.runAsync(
-    "INSERT INTO item_types (name, category, recipe, notes, recipe_image, lowStockThreshold) VALUES (?, ?, ?, ?, ?, ?)",
-    itemType.name,
-    itemType.category ?? null,
-    itemType.recipe ?? null,
-    itemType.notes ?? null,
-    itemType.recipe_image ?? null,
-    itemType.lowStockThreshold ?? 0,
+    ],
   );
   return res.lastInsertRowId as number;
 }
 
 export async function deleteItemType(id: number): Promise<void> {
   const database = await getDb();
-  await database.runAsync("DELETE FROM item_types WHERE id = ?", id);
+  await database.runAsync("DELETE FROM item_types WHERE id = ?", [id]);
 }
 
 export async function getRunningLowItems(): Promise<
@@ -700,7 +709,8 @@ export async function getRunningLowItems(): Promise<
   return withDb(async (database) => {
     const customCategories = await getAllCategories();
 
-    const runningLowItems = await database.getAllAsync(`
+    const runningLowItems = await database.getAllAsync(
+      `
       SELECT 
         it.id,
         it.name,
@@ -713,7 +723,9 @@ export async function getRunningLowItems(): Promise<
       GROUP BY it.id, it.name, it.category, it.lowStockThreshold
       HAVING available < it.lowStockThreshold AND available >= 0
       ORDER BY (available * 1.0 / it.lowStockThreshold) ASC
-    `);
+    `,
+      [],
+    );
 
     return runningLowItems.map((item: any) => {
       const category = customCategories.find((c) => c.name === item.category);
@@ -745,6 +757,7 @@ export async function getItemTypesWithCounts(): Promise<
        LEFT JOIN jars j ON j.itemTypeId = it.id
       GROUP BY it.id
       ORDER BY it.name COLLATE NOCASE`,
+    [],
   );
   return rows.map((r) => ({
     id: r.id,
@@ -817,6 +830,7 @@ export async function getJarById(jarId: number): Promise<Jar | null> {
 
 export async function markJarUsed(
   jarId: number,
+  usedDate?: string,
 ): Promise<{ success: boolean; message: string; jar?: Jar }> {
   const database = await getDb();
 
@@ -835,13 +849,33 @@ export async function markJarUsed(
     };
   }
 
-  // Mark as used
-  const usedDate = new Date().toISOString();
+  // Mark as used with provided date or current date
+  const dateToUse = usedDate || new Date().toISOString();
   await database.runAsync(
     "UPDATE jars SET used = 1, usedDateISO = ? WHERE id = ?",
-    [usedDate, jarId],
+    [dateToUse, jarId],
   );
   return { success: true, message: "Jar marked as used successfully", jar };
+}
+
+export async function setJarUsedDate(
+  jarId: number,
+  usedDateISO: string,
+): Promise<{ success: boolean; message: string }> {
+  const database = await getDb();
+
+  // Check if jar exists
+  const jar = await getJarById(jarId);
+  if (!jar) {
+    return { success: false, message: "Jar not found" };
+  }
+
+  // Update the used date
+  await database.runAsync("UPDATE jars SET usedDateISO = ? WHERE id = ?", [
+    usedDateISO,
+    jarId,
+  ]);
+  return { success: true, message: "Used date updated successfully" };
 }
 
 export async function deleteJar(jarId: number): Promise<void> {
@@ -1016,6 +1050,7 @@ export async function getJarStats(): Promise<{
          COUNT(*) as total,
          SUM(CASE WHEN used = 1 THEN 1 ELSE 0 END) as used
        FROM jars`,
+      [],
     );
 
     const total = result?.total ?? 0;
@@ -1030,18 +1065,23 @@ export async function exportToJson(): Promise<string> {
   const database = await getDb();
   const itemTypes = await database.getAllAsync<ItemType>(
     "SELECT id, name, category, recipe, notes, recipe_image, lowStockThreshold FROM item_types",
+    [],
   );
   const jars = await database.getAllAsync<Jar>(
-    "SELECT id, itemTypeId, fillDateISO, used, jarSize, location, batchId, recipeId FROM jars",
+    "SELECT id, itemTypeId, fillDateISO, used, usedDateISO, jarSize, location, batchId, recipeId FROM jars",
+    [],
   );
   const customCategories = await database.getAllAsync<CustomCategory>(
     "SELECT id, name, icon, isDefault FROM custom_categories",
+    [],
   );
   const customJarSizes = await database.getAllAsync<CustomJarSize>(
     "SELECT id, name, isDefault, hidden FROM custom_jar_sizes",
+    [],
   );
   const recipes = await database.getAllAsync<Recipe>(
     "SELECT id, name, content, image, created_date, last_used_date FROM recipes",
+    [],
   );
   return JSON.stringify(
     { itemTypes, jars, customCategories, customJarSizes, recipes },
@@ -1061,6 +1101,20 @@ export type ImportPayload = {
 export async function importFromJson(json: string): Promise<void> {
   const database = await getDb();
   const payload = JSON.parse(json) as ImportPayload;
+
+  console.log("[IMPORT] Starting import with payload:", {
+    itemTypesCount: payload.itemTypes?.length,
+    jarsCount: payload.jars?.length,
+    sampleJars: payload.jars
+      ?.slice(0, 3)
+      .map((j) => ({
+        id: j.id,
+        itemTypeId: j.itemTypeId,
+        used: j.used,
+        usedDateISO: j.usedDateISO,
+      })),
+  });
+
   await database.execAsync("BEGIN");
   try {
     await database.execAsync(
@@ -1165,12 +1219,15 @@ export async function importFromJson(json: string): Promise<void> {
       }
     }
     for (const j of payload.jars) {
+      // Ensure used is properly converted to 0 or 1
+      const usedValue = j.used ? 1 : 0;
       await database.runAsync(
-        "INSERT INTO jars (id, itemTypeId, fillDateISO, used, jarSize, location, batchId, recipe, recipe_image, recipeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO jars (id, itemTypeId, fillDateISO, used, usedDateISO, jarSize, location, batchId, recipe, recipe_image, recipeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         j.id ?? null,
         j.itemTypeId,
         j.fillDateISO,
-        j.used ?? 0,
+        usedValue,
+        j.usedDateISO ?? null,
         j.jarSize ?? null,
         j.location ?? null,
         j.batchId ?? null,
@@ -1184,6 +1241,18 @@ export async function importFromJson(json: string): Promise<void> {
     await migrateRecipesFromItemTypesToJars(database);
 
     await database.execAsync("COMMIT");
+
+    // Log verification after import
+    const importedJars = await database.getAllAsync<{
+      id: number;
+      used: number;
+    }>("SELECT id, used FROM jars LIMIT 10", []);
+    const usedCount = await database.getAllAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM jars WHERE used = 1",
+      [],
+    );
+    console.log("[IMPORT] Import completed. Sample jars:", importedJars);
+    console.log("[IMPORT] Total jars with used=1:", usedCount[0]?.count);
   } catch (e) {
     await database.execAsync("ROLLBACK");
     throw e;
@@ -1557,6 +1626,7 @@ export async function getAllRecipes(): Promise<Recipe[]> {
   try {
     const tableCheck = await database.getFirstAsync(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='recipes'",
+      [],
     );
     console.log("Recipes table exists:", !!tableCheck);
 
@@ -1579,6 +1649,7 @@ export async function getAllRecipes(): Promise<Recipe[]> {
 
   const result = await database.getAllAsync<Recipe>(
     "SELECT * FROM recipes ORDER BY last_used_date DESC, created_date DESC",
+    [],
   );
   console.log(
     "getAllRecipes: Found",

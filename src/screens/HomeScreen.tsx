@@ -28,6 +28,7 @@ import { theme } from "../theme";
 import type { RootStackParamList } from "../App";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { usePremium } from "../hooks/usePremium";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -51,6 +52,7 @@ type Batch = {
 };
 
 export default function HomeScreen() {
+  const { isPremium } = usePremium();
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const [batches, setBatches] = React.useState<Batch[]>([]);
@@ -211,6 +213,10 @@ export default function HomeScreen() {
 
   // Check if an item type is running low
   const isItemRunningLow = (itemTypeId: number): boolean => {
+    // Low stock notifications only available for premium users
+    if (!isPremium) {
+      return false;
+    }
     return runningLowItems.some((item) => item.id === itemTypeId);
   };
 

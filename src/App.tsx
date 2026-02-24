@@ -23,6 +23,7 @@ import JarSizeManagementScreen from "./screens/JarSizeManagementScreen";
 import RecipeManagementScreen from "./screens/RecipeManagementScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { theme } from "./theme";
+import { SubscriptionProvider } from "./contexts/SubscriptionContext";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -98,67 +99,69 @@ export default function App() {
   };
   return (
     <ErrorBoundary>
-      <NavigationContainer theme={theme}>
-        <Stack.Navigator id={undefined}>
-          <Stack.Screen
-            name="Tabs"
-            component={Tabs}
-            options={{
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="ItemTypeForm"
-            component={ItemTypeFormScreen}
-            options={{ title: "Item Type" }}
-          />
-          <Stack.Screen
-            name="ItemDetail"
-            component={ItemDetailScreen}
-            options={{ title: "Item Detail" }}
-          />
-          <Stack.Screen
-            name="BatchDetail"
-            component={BatchDetailScreen}
-            options={{ title: "Batch Details" }}
-          />
-          <Stack.Screen
-            name="AddBatch"
-            component={AddBatchScreen}
-            options={{ title: "Add Batch" }}
-          />
-          <Stack.Screen
-            name="QRLabel"
-            component={QRLabelScreen}
-            options={{ title: "QR Code Label" }}
-          />
-          <Stack.Screen
-            name="QRScanner"
-            component={QRScannerScreen}
-            options={{ title: "QR Scanner" }}
-          />
-          <Stack.Screen
-            name="BackupRestore"
-            component={BackupRestoreScreen}
-            options={{ title: "Backup & Restore" }}
-          />
-          <Stack.Screen
-            name="CategoryManagement"
-            component={CategoryManagementScreen}
-            options={{ title: "Manage Categories" }}
-          />
-          <Stack.Screen
-            name="JarSizeManagement"
-            component={JarSizeManagementScreen}
-            options={{ title: "Manage Jar Sizes" }}
-          />
-          <Stack.Screen
-            name="RecipeManagement"
-            component={RecipeManagementScreen}
-            options={{ title: "Recipe Collection" }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <SubscriptionProvider>
+        <NavigationContainer theme={theme}>
+          <Stack.Navigator id={undefined}>
+            <Stack.Screen
+              name="Tabs"
+              component={Tabs}
+              options={{
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="ItemTypeForm"
+              component={ItemTypeFormScreen}
+              options={{ title: "Item Type" }}
+            />
+            <Stack.Screen
+              name="ItemDetail"
+              component={ItemDetailScreen}
+              options={{ title: "Item Detail" }}
+            />
+            <Stack.Screen
+              name="BatchDetail"
+              component={BatchDetailScreen}
+              options={{ title: "Batch Details" }}
+            />
+            <Stack.Screen
+              name="AddBatch"
+              component={AddBatchScreen}
+              options={{ title: "Add Batch" }}
+            />
+            <Stack.Screen
+              name="QRLabel"
+              component={QRLabelScreen}
+              options={{ title: "QR Code Label" }}
+            />
+            <Stack.Screen
+              name="QRScanner"
+              component={QRScannerScreen}
+              options={{ title: "QR Scanner" }}
+            />
+            <Stack.Screen
+              name="BackupRestore"
+              component={BackupRestoreScreen}
+              options={{ title: "Backup & Restore" }}
+            />
+            <Stack.Screen
+              name="CategoryManagement"
+              component={CategoryManagementScreen}
+              options={{ title: "Manage Categories" }}
+            />
+            <Stack.Screen
+              name="JarSizeManagement"
+              component={JarSizeManagementScreen}
+              options={{ title: "Manage Jar Sizes" }}
+            />
+            <Stack.Screen
+              name="RecipeManagement"
+              component={RecipeManagementScreen}
+              options={{ title: "Recipe Collection" }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SubscriptionProvider>
     </ErrorBoundary>
   );
 }

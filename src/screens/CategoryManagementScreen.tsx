@@ -19,6 +19,8 @@ import {
 } from "../db";
 import { theme } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { usePremium } from "../hooks/usePremium";
+import PremiumUpgrade from "../components/PremiumUpgrade";
 
 interface EditCategoryModalProps {
   visible: boolean;
@@ -149,11 +151,13 @@ const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
 };
 
 export default function CategoryManagementScreen() {
+  const { isPremium } = usePremium();
   const [categories, setCategories] = useState<CustomCategory[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CustomCategory | null>(
-    null
+    null,
   );
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const loadCategories = async () => {
     try {
@@ -161,7 +165,7 @@ export default function CategoryManagementScreen() {
       // Filter out any invalid categories and ensure proper data types
       const validCategories = allCategories.filter(
         (cat) =>
-          cat && typeof cat.name === "string" && typeof cat.icon === "string"
+          cat && typeof cat.name === "string" && typeof cat.icon === "string",
       );
       setCategories(validCategories);
     } catch (error) {
@@ -175,6 +179,12 @@ export default function CategoryManagementScreen() {
   }, []);
 
   const handleAddCategory = () => {
+    // Free users limited to 5 categories
+    const FREE_CATEGORY_LIMIT = 5;
+    if (!isPremium && categories.length >= FREE_CATEGORY_LIMIT) {
+      setShowUpgradeModal(true);
+      return;
+    }
     setEditingCategory(null);
     setModalVisible(true);
   };
@@ -193,13 +203,13 @@ export default function CategoryManagementScreen() {
       const isDuplicate = categories.some(
         (cat) =>
           cat.name.toLowerCase() === categoryData.name.toLowerCase() &&
-          cat.id !== editingCategory?.id
+          cat.id !== editingCategory?.id,
       );
 
       if (isDuplicate) {
         Alert.alert(
           "Duplicate Category",
-          `A category named "${categoryData.name}" already exists. Please choose a different name.`
+          `A category named "${categoryData.name}" already exists. Please choose a different name.`,
         );
         return;
       }
@@ -208,7 +218,7 @@ export default function CategoryManagementScreen() {
         await updateCustomCategory(
           editingCategory.id!,
           categoryData.name,
-          categoryData.icon
+          categoryData.icon,
         );
       } else {
         await addCustomCategory(categoryData.name, categoryData.icon);
@@ -246,12 +256,12 @@ export default function CategoryManagementScreen() {
               console.error("Error deleting category:", error);
               Alert.alert(
                 "Error",
-                `Failed to delete category. ${error.message}`
+                `Failed to delete category. ${error.message}`,
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -314,6 +324,11 @@ export default function CategoryManagementScreen() {
           setModalVisible(false);
           setEditingCategory(null);
         }}
+      />
+
+      <PremiumUpgrade
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
       />
     </SafeAreaView>
   );

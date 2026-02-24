@@ -22,14 +22,18 @@ import {
   formatDateWithUserPreference,
   DateFormat,
 } from "../db";
+import { usePremium } from "../hooks/usePremium";
+import PremiumUpgrade from "../components/PremiumUpgrade";
 
 export default function SettingsScreen({ navigation }: any) {
   const [activeSection, setActiveSection] = useState<"settings" | "about">(
-    "settings"
+    "settings",
   );
   const [currentDateFormat, setCurrentDateFormat] =
     useState<DateFormat>("MM/DD/YYYY");
   const [showDateFormatModal, setShowDateFormatModal] = useState(false);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const { isPremium, restorePurchases } = usePremium();
 
   // Load current date format when component mounts
   useEffect(() => {
@@ -57,7 +61,7 @@ export default function SettingsScreen({ navigation }: any) {
   };
 
   const handleEmailPress = () => {
-    Linking.openURL("mailto:vbdesignapps@gmail.com");
+    Linking.openURL("mailto:support@vbdesignapps.dev");
   };
 
   const handleWebsitePress = () => {
@@ -70,6 +74,25 @@ export default function SettingsScreen({ navigation }: any) {
 
   const renderSettingsContent = () => (
     <View>
+      {/* Premium Section */}
+      {!isPremium && (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.premiumButton}
+            onPress={() => setShowPremiumModal(true)}
+          >
+            <Ionicons name="star" size={24} color="white" />
+            <View style={styles.premiumText}>
+              <Text style={styles.premiumTitle}>Upgrade to Premium</Text>
+              <Text style={styles.premiumSubtitle}>
+                Unlock advanced features
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Customization Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Customization</Text>
@@ -85,8 +108,8 @@ export default function SettingsScreen({ navigation }: any) {
               {currentDateFormat === "MM/DD/YYYY"
                 ? "03/15/2024 (US)"
                 : currentDateFormat === "DD/MM/YYYY"
-                ? "15/03/2024 (International)"
-                : "Mar 15, 2024 (Text)"}
+                  ? "15/03/2024 (International)"
+                  : "Mar 15, 2024 (Text)"}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
@@ -163,11 +186,7 @@ export default function SettingsScreen({ navigation }: any) {
       return Application.nativeApplicationVersion;
     }
     // fallback for dev/Expo Go
-    return (
-      Constants.expoConfig?.version ||
-      Constants.manifest?.version ||
-      "1.1.3"
-    );
+    return Constants.expoConfig?.version || "1.2.4";
   };
 
   const renderAboutContent = () => (
@@ -280,7 +299,7 @@ export default function SettingsScreen({ navigation }: any) {
           <Ionicons name="mail" size={24} color={theme.colors.primary} />
           <View style={styles.contactText}>
             <Text style={styles.contactLabel}>Email Support</Text>
-            <Text style={styles.contactValue}>vbdesignapps@gmail.com</Text>
+            <Text style={styles.contactValue}>support@vbdesignapps.dev</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#666" />
         </TouchableOpacity>
@@ -308,6 +327,44 @@ export default function SettingsScreen({ navigation }: any) {
             people.
           </Text>
         </View>
+      </View>
+
+      {/* Premium Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Premium</Text>
+        {isPremium ? (
+          <View style={styles.premiumInfo}>
+            <Ionicons name="star" size={24} color={theme.colors.primary} />
+            <Text style={styles.premiumStatusText}>
+              Thank you for upgrading to Premium!
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.contactItem}
+            onPress={() => setShowPremiumModal(true)}
+          >
+            <Ionicons name="star" size={24} color={theme.colors.primary} />
+            <View style={styles.contactText}>
+              <Text style={styles.contactLabel}>Upgrade to Premium</Text>
+              <Text style={styles.contactValue}>Unlock advanced features</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={() => {
+            restorePurchases().then(() => {
+              Alert.alert(
+                "Restore Complete",
+                "Your purchases have been restored.",
+              );
+            });
+          }}
+        >
+          <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Legal Section */}
@@ -495,6 +552,12 @@ export default function SettingsScreen({ navigation }: any) {
           </SafeAreaView>
         </View>
       </Modal>
+
+      {/* Premium Upgrade Modal */}
+      <PremiumUpgrade
+        visible={showPremiumModal}
+        onClose={() => setShowPremiumModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -760,5 +823,55 @@ const styles = StyleSheet.create({
   },
   selectedOptionExample: {
     color: theme.colors.background,
+  },
+  premiumButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.accent,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  premiumText: {
+    flex: 1,
+  },
+  premiumTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "white",
+    marginBottom: 4,
+  },
+  premiumSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  premiumInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#e3f2fd",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  premiumStatusText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.colors.primary,
+  },
+  restoreButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.colors.primary,
+    textAlign: "center",
   },
 });
